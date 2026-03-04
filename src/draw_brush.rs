@@ -8,7 +8,10 @@ use bevy::{
 use crate::{
     EditorEntity,
     brush::BrushFaceEntity,
-    commands::{CommandGroup, CommandHistory, DespawnEntity, EditorCommand, snapshot_entity, snapshot_rebuild},
+    commands::{
+        CommandGroup, CommandHistory, DespawnEntity, EditorCommand, snapshot_entity,
+        snapshot_rebuild,
+    },
     selection::{Selected, Selection},
     snapping::SnapSettings,
     viewport::SceneViewport,
@@ -1636,8 +1639,9 @@ fn join_selected_brushes(
                         .iter()
                         .filter(|&&i| i < existing_count && old_set.contains(&i))
                         .count() as f32;
-                    let normal_sim =
-                        hull_face.normal.dot(old_primary_brush.faces[old_idx].plane.normal);
+                    let normal_sim = hull_face
+                        .normal
+                        .dot(old_primary_brush.faces[old_idx].plane.normal);
                     let score = overlap + normal_sim * 0.1;
                     if score > best_score {
                         best_score = score;

@@ -6,12 +6,10 @@ fn main() -> AppExit {
         .unwrap_or_else(|| std::env::current_dir().unwrap_or_default());
 
     App::new()
-        .add_plugins(
-            DefaultPlugins.set(AssetPlugin {
-                file_path: project_root.join("assets").to_string_lossy().to_string(),
-                ..default()
-            }),
-        )
+        .add_plugins(DefaultPlugins.set(AssetPlugin {
+            file_path: project_root.join("assets").to_string_lossy().to_string(),
+            ..default()
+        }))
         .add_plugins(EditorPlugin)
         .add_systems(OnEnter(jackdaw::AppState::Editor), spawn_scene)
         .run()

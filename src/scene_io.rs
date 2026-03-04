@@ -50,8 +50,7 @@ impl Plugin for SceneIoPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<SceneFilePath>().add_systems(
             Update,
-            (handle_scene_io_keys, poll_scene_dialog)
-                .run_if(in_state(crate::AppState::Editor)),
+            (handle_scene_io_keys, poll_scene_dialog).run_if(in_state(crate::AppState::Editor)),
         );
     }
 }

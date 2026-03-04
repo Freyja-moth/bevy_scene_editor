@@ -16,7 +16,10 @@ impl Plugin for TerrainPlugin {
         app.init_resource::<TerrainEditMode>()
             .init_resource::<TerrainBrushSettings>()
             .init_resource::<TerrainSculptState>()
-            .add_systems(Update, ensure_terrain_dirty_chunks.run_if(in_state(crate::AppState::Editor)))
+            .add_systems(
+                Update,
+                ensure_terrain_dirty_chunks.run_if(in_state(crate::AppState::Editor)),
+            )
             .add_plugins((
                 mesh::plugin,
                 sculpt::plugin,

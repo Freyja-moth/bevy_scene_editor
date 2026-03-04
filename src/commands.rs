@@ -17,11 +17,10 @@ pub struct CommandHistoryPlugin;
 
 impl Plugin for CommandHistoryPlugin {
     fn build(&self, app: &mut App) {
-        app.insert_resource(CommandHistory::default())
-            .add_systems(
-                Update,
-                handle_undo_redo_keys.run_if(in_state(crate::AppState::Editor)),
-            );
+        app.insert_resource(CommandHistory::default()).add_systems(
+            Update,
+            handle_undo_redo_keys.run_if(in_state(crate::AppState::Editor)),
+        );
     }
 }
 

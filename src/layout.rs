@@ -745,7 +745,10 @@ fn bottom_panels(icon_font: Handle<Font>) -> impl Bundle {
         split_panel::panel_group(
             0.15,
             (
-                Spawn((split_panel::panel(1), asset_browser::asset_browser_panel(icon_font.clone()))),
+                Spawn((
+                    split_panel::panel(1),
+                    asset_browser::asset_browser_panel(icon_font.clone()),
+                )),
                 Spawn(split_panel::panel_handle()),
                 Spawn((
                     split_panel::panel(1),

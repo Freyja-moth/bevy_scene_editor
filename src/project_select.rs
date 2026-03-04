@@ -102,7 +102,14 @@ fn spawn_project_selector(mut commands: Commands, editor_font: Res<EditorFont>) 
                             .map(|n| n.to_string_lossy().to_string())
                             .unwrap_or_else(|| cwd.to_string_lossy().to_string());
                         let cwd_clone = cwd.clone();
-                        spawn_project_row(card, &cwd_name, &cwd.to_string_lossy(), font.clone(), cwd_clone, true);
+                        spawn_project_row(
+                            card,
+                            &cwd_name,
+                            &cwd.to_string_lossy(),
+                            font.clone(),
+                            cwd_clone,
+                            true,
+                        );
                     }
 
                     // Recent projects
@@ -161,24 +168,20 @@ fn spawn_project_selector(mut commands: Commands, editor_font: Res<EditorFont>) 
                         .id();
 
                     // Hover effects for browse button
-                    card.commands()
-                        .entity(browse_entity)
-                        .observe(
-                            |hover: On<Pointer<Over>>, mut bg: Query<&mut BackgroundColor>| {
-                                if let Ok(mut bg) = bg.get_mut(hover.event_target()) {
-                                    bg.0 = tokens::SELECTED_BORDER;
-                                }
-                            },
-                        );
-                    card.commands()
-                        .entity(browse_entity)
-                        .observe(
-                            |out: On<Pointer<Out>>, mut bg: Query<&mut BackgroundColor>| {
-                                if let Ok(mut bg) = bg.get_mut(out.event_target()) {
-                                    bg.0 = tokens::SELECTED_BG;
-                                }
-                            },
-                        );
+                    card.commands().entity(browse_entity).observe(
+                        |hover: On<Pointer<Over>>, mut bg: Query<&mut BackgroundColor>| {
+                            if let Ok(mut bg) = bg.get_mut(hover.event_target()) {
+                                bg.0 = tokens::SELECTED_BORDER;
+                            }
+                        },
+                    );
+                    card.commands().entity(browse_entity).observe(
+                        |out: On<Pointer<Out>>, mut bg: Query<&mut BackgroundColor>| {
+                            if let Ok(mut bg) = bg.get_mut(out.event_target()) {
+                                bg.0 = tokens::SELECTED_BG;
+                            }
+                        },
+                    );
                     card.commands()
                         .entity(browse_entity)
                         .observe(spawn_browse_dialog);
@@ -240,39 +243,30 @@ fn spawn_project_row(
         .id();
 
     // Hover effects
-    parent
-        .commands()
-        .entity(row_entity)
-        .observe(
-            |hover: On<Pointer<Over>>, mut bg: Query<&mut BackgroundColor>| {
-                if let Ok(mut bg) = bg.get_mut(hover.event_target()) {
-                    bg.0 = tokens::HOVER_BG;
-                }
-            },
-        );
-    parent
-        .commands()
-        .entity(row_entity)
-        .observe(
-            |out: On<Pointer<Out>>, mut bg: Query<&mut BackgroundColor>| {
-                if let Ok(mut bg) = bg.get_mut(out.event_target()) {
-                    bg.0 = tokens::TOOLBAR_BG;
-                }
-            },
-        );
+    parent.commands().entity(row_entity).observe(
+        |hover: On<Pointer<Over>>, mut bg: Query<&mut BackgroundColor>| {
+            if let Ok(mut bg) = bg.get_mut(hover.event_target()) {
+                bg.0 = tokens::HOVER_BG;
+            }
+        },
+    );
+    parent.commands().entity(row_entity).observe(
+        |out: On<Pointer<Out>>, mut bg: Query<&mut BackgroundColor>| {
+            if let Ok(mut bg) = bg.get_mut(out.event_target()) {
+                bg.0 = tokens::TOOLBAR_BG;
+            }
+        },
+    );
 
     // Click: select project
-    parent
-        .commands()
-        .entity(row_entity)
-        .observe(
-            move |_: On<Pointer<Click>>, mut commands: Commands| {
-                let path = project_path.clone();
-                commands.queue(move |world: &mut World| {
-                    select_project(world, path);
-                });
-            },
-        );
+    parent.commands().entity(row_entity).observe(
+        move |_: On<Pointer<Click>>, mut commands: Commands| {
+            let path = project_path.clone();
+            commands.queue(move |world: &mut World| {
+                select_project(world, path);
+            });
+        },
+    );
 }
 
 fn if_cwd_badge(is_cwd: bool, font: Handle<Font>) -> impl Bundle {

@@ -53,7 +53,10 @@ impl Plugin for HierarchyPlugin {
             .init_resource::<PendingTemplateDefaultName>()
             .add_systems(
                 OnEnter(crate::AppState::Editor),
-                (setup_name_watcher, rebuild_hierarchy.after(crate::spawn_layout)),
+                (
+                    setup_name_watcher,
+                    rebuild_hierarchy.after(crate::spawn_layout),
+                ),
             )
             .add_systems(
                 Update,
