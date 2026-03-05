@@ -55,7 +55,7 @@ pub(crate) fn add_component_displays(
 
     build_inspector_displays(
         &mut commands,
-        &components,
+        components,
         &type_registry,
         source_entity,
         archetype,
@@ -543,7 +543,7 @@ pub(crate) fn on_inspector_dirty(
 
     build_inspector_displays(
         &mut commands,
-        &components,
+        components,
         &type_registry,
         source_entity,
         archetype,
