@@ -749,6 +749,7 @@ fn handle_hierarchy_right_click(
     }
 
     let menu_items = &[
+        ("hierarchy.focus", "Focus                    F"),
         ("hierarchy.rename", "Rename              F2"),
         ("hierarchy.duplicate", "Duplicate        Ctrl+D"),
         ("hierarchy.delete", "Delete             Del"),
@@ -774,10 +775,30 @@ fn handle_hierarchy_right_click(
 }
 
 /// Handle context menu actions for hierarchy operations.
-fn on_context_menu_action(event: On<ContextMenuAction>, mut commands: Commands) {
+fn on_context_menu_action(
+    event: On<ContextMenuAction>,
+    mut commands: Commands,
+    global_transforms: Query<&GlobalTransform>,
+    mut camera_query: Query<&mut Transform, With<jackdaw_camera::JackdawCameraSettings>>,
+) {
     let target_entity = event.target_entity;
 
     match event.action.as_str() {
+        "hierarchy.focus" => {
+            if let Some(target) = target_entity {
+                if let Ok(global_tf) = global_transforms.get(target) {
+                    let target_pos = global_tf.translation();
+                    let scale = global_tf.compute_transform().scale;
+                    let dist = (scale.length() * 3.0).max(5.0);
+
+                    for mut transform in &mut camera_query {
+                        let forward = transform.forward().as_vec3();
+                        transform.translation = target_pos - forward * dist;
+                        *transform = transform.looking_at(target_pos, Vec3::Y);
+                    }
+                }
+            }
+        }
         "hierarchy.rename" => {
             if let Some(target) = target_entity {
                 commands.trigger(TreeRowStartRename {

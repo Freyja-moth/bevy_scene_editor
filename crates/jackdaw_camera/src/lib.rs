@@ -108,26 +108,26 @@ fn camera_system(
             scroll_events.read().count();
         }
 
-        // WASD + QE movement (always active, independent of right-click)
+        // WASD + QE movement (independent of right-click, but skip when Ctrl/Alt held for shortcuts)
         let dt = time.delta_secs();
         let mut movement = Vec3::ZERO;
 
-        if keyboard.pressed(KeyCode::KeyW) {
+        if !ctrl && !alt && keyboard.pressed(KeyCode::KeyW) {
             movement += transform.forward().as_vec3();
         }
-        if keyboard.pressed(KeyCode::KeyS) {
+        if !ctrl && !alt && keyboard.pressed(KeyCode::KeyS) {
             movement -= transform.forward().as_vec3();
         }
-        if keyboard.pressed(KeyCode::KeyA) {
+        if !ctrl && !alt && keyboard.pressed(KeyCode::KeyA) {
             movement -= transform.right().as_vec3();
         }
-        if keyboard.pressed(KeyCode::KeyD) {
+        if !ctrl && !alt && keyboard.pressed(KeyCode::KeyD) {
             movement += transform.right().as_vec3();
         }
-        if keyboard.pressed(KeyCode::KeyQ) {
+        if !ctrl && !alt && keyboard.pressed(KeyCode::KeyQ) {
             movement += Vec3::Y;
         }
-        if keyboard.pressed(KeyCode::KeyE) {
+        if !ctrl && !alt && keyboard.pressed(KeyCode::KeyE) {
             movement -= Vec3::Y;
         }
 
