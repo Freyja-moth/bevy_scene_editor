@@ -4,6 +4,7 @@ use bevy::color::palettes::tailwind;
 use bevy::prelude::*;
 
 use crate::brush::{Brush, BrushMeshCache};
+use crate::draw_brush::CutPreviewHidden;
 use crate::selection::Selected;
 use crate::snapping::SnapSettings;
 use crate::viewport_overlays::OverlaySettings;
@@ -37,7 +38,7 @@ fn configure_face_grid_gizmos(mut config_store: ResMut<GizmoConfigStore>) {
 fn draw_brush_edges(
     mut gizmos: Gizmos<FaceGridGizmoGroup>,
     settings: Res<OverlaySettings>,
-    brushes: Query<(&BrushMeshCache, &GlobalTransform, Has<Selected>)>,
+    brushes: Query<(&BrushMeshCache, &GlobalTransform, Has<Selected>), Without<CutPreviewHidden>>,
 ) {
     if !settings.show_brush_wireframe {
         return;
@@ -71,7 +72,7 @@ fn draw_face_grids(
     mut gizmos: Gizmos<FaceGridGizmoGroup>,
     settings: Res<OverlaySettings>,
     snap: Res<SnapSettings>,
-    brushes: Query<(&Brush, &BrushMeshCache, &GlobalTransform, Has<Selected>)>,
+    brushes: Query<(&Brush, &BrushMeshCache, &GlobalTransform, Has<Selected>), Without<CutPreviewHidden>>,
 ) {
     if !settings.show_face_grid {
         return;

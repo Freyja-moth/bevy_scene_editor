@@ -22,7 +22,8 @@ use crate::{
 };
 use jackdaw_geometry::{
     brush_planes_to_world, brushes_intersect, clean_degenerate_faces, compute_brush_geometry,
-    compute_face_tangent_axes, compute_face_uvs, subtract_brush, triangulate_face,
+    compute_face_tangent_axes, compute_face_uvs, subtract_brush,
+    triangulate_face,
 };
 use jackdaw_jsn::{Brush, BrushFaceData, BrushPlane};
 
@@ -118,13 +119,16 @@ struct CutResultPreviewMesh;
 
 /// Marker for brush face entities hidden during cut preview.
 #[derive(Component)]
-struct CutPreviewHidden;
+pub struct CutPreviewHidden;
 
 impl Plugin for DrawBrushPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<DrawBrushState>()
             .init_gizmo_group::<DrawBrushGizmoGroup>()
-            .add_systems(Startup, configure_draw_brush_gizmos)
+            .add_systems(
+                Startup,
+                configure_draw_brush_gizmos,
+            )
             .add_systems(
                 Update,
                 (
@@ -134,8 +138,7 @@ impl Plugin for DrawBrushPlugin {
                     draw_brush_confirm,
                     draw_brush_cancel,
                     draw_brush_preview,
-                    manage_draw_preview_mesh
-                        .after(crate::brush::mesh::regenerate_brush_meshes),
+                    manage_draw_preview_mesh.after(crate::brush::mesh::regenerate_brush_meshes),
                     join_selected_brushes,
                 )
                     .chain()
@@ -685,7 +688,6 @@ fn draw_brush_preview(
                 for &v in verts {
                     gizmos.line(v, v + offset, color);
                 }
-
             } else {
                 // Cuboid wireframe
                 let base = footprint_corners(active);
@@ -704,9 +706,7 @@ fn draw_brush_preview(
                 for i in 0..4 {
                     gizmos.line(base[i], top[i], color);
                 }
-
             }
-
         }
     }
 }
@@ -1211,7 +1211,6 @@ fn spawn_polygon_brush(active: &ActiveDraw, commands: &mut Commands) {
     });
 }
 
-
 fn manage_draw_preview_mesh(
     draw_state: Res<DrawBrushState>,
     mut commands: Commands,
@@ -1227,7 +1226,7 @@ fn manage_draw_preview_mesh(
     mat_def_cache: Res<MaterialDefinitionCache>,
     mut cached_add_material: Local<Option<Handle<StandardMaterial>>>,
     mut cached_cut_material: Local<Option<Handle<StandardMaterial>>>,
-    mut cached_cut_face_material: Local<Option<Handle<StandardMaterial>>>,
+
     mut cached_preview_key: Local<Option<(Vec3, Vec3, f32, Vec<Vec3>)>>,
 ) {
     // Show preview for both Add and Cut during extrude phase
@@ -1269,8 +1268,15 @@ fn manage_draw_preview_mesh(
             && prev_key.1.abs_diff_eq(current_key.1, 1e-6)
             && (prev_key.2 - current_key.2).abs() < 1e-6
             && prev_key.3.len() == current_key.3.len()
-            && prev_key.3.iter().zip(current_key.3.iter()).all(|(a, b)| a.abs_diff_eq(*b, 1e-6));
-        if same && (!preview_query.is_empty() || !result_preview_query.is_empty()) {
+            && prev_key
+                .3
+                .iter()
+                .zip(current_key.3.iter())
+                .all(|(a, b)| a.abs_diff_eq(*b, 1e-6));
+        if same
+            && (active.mode == DrawMode::Cut || !preview_query.is_empty())
+            && (active.mode != DrawMode::Cut || !result_preview_query.is_empty())
+        {
             return;
         }
     }
@@ -1315,7 +1321,26 @@ fn manage_draw_preview_mesh(
         }
     }
 
-    let normals = vec![[0.0, 0.0, 1.0]; positions.len()];
+    // Compute per-vertex normals by averaging face normals
+    let mut normals = vec![[0.0_f32; 3]; positions.len()];
+    for (face_idx, polygon) in face_polys.iter().enumerate() {
+        if face_idx < cutter_planes.len() {
+            let n = cutter_planes[face_idx].plane.normal.to_array();
+            for &vi in polygon {
+                normals[vi][0] += n[0];
+                normals[vi][1] += n[1];
+                normals[vi][2] += n[2];
+            }
+        }
+    }
+    for n in &mut normals {
+        let len = (n[0] * n[0] + n[1] * n[1] + n[2] * n[2]).sqrt();
+        if len > 0.0 {
+            n[0] /= len;
+            n[1] /= len;
+            n[2] /= len;
+        }
+    }
     let mut mesh = Mesh::new(PrimitiveTopology::TriangleList, default());
     mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, positions);
     mesh.insert_attribute(Mesh::ATTRIBUTE_NORMAL, normals);
@@ -1334,7 +1359,7 @@ fn manage_draw_preview_mesh(
         }),
         DrawMode::Cut => cached_cut_material.get_or_insert_with(|| {
             materials.add(StandardMaterial {
-                base_color: Color::srgba(1.0, 0.15, 0.15, 0.4),
+                base_color: Color::srgba(1.0, 0.2, 0.2, 0.15),
                 alpha_mode: AlphaMode::Blend,
                 unlit: true,
                 cull_mode: None,
@@ -1351,16 +1376,19 @@ fn manage_draw_preview_mesh(
         commands.entity(entity).despawn();
     }
 
-    // Spawn cutter volume preview
-    commands.spawn((
-        Mesh3d(meshes.add(mesh)),
-        MeshMaterial3d(material.clone()),
-        Transform::default(),
-        DrawPreviewMesh,
-        NotShadowCaster,
-        NotShadowReceiver,
-        EditorEntity,
-    ));
+    // Spawn solid volume preview for Add mode only.
+    if active.mode == DrawMode::Add {
+        commands.spawn((
+            Mesh3d(meshes.add(mesh)),
+            MeshMaterial3d(material.clone()),
+            Visibility::Inherited,
+            Transform::default(),
+            DrawPreviewMesh,
+            NotShadowCaster,
+            NotShadowReceiver,
+            EditorEntity,
+        ));
+    }
 
     // In Cut mode, spawn solid result preview meshes for affected brushes
     if active.mode == DrawMode::Cut {
@@ -1368,11 +1396,20 @@ fn manage_draw_preview_mesh(
             let (_, rotation, translation) = brush_tf.to_scale_rotation_translation();
             let world_target = brush_planes_to_world(&brush.faces, rotation, translation);
 
-            if !brushes_intersect(&world_target, &cutter_planes) {
+            let intersects = brushes_intersect(&world_target, &cutter_planes);
+            if !intersects {
                 continue;
             }
 
-            // Hide the original brush entity (Bevy propagates to all descendants)
+            let kept_fragments = subtract_brush(&world_target, &cutter_planes);
+
+            // Only hide the original brush if subtraction produced valid fragments;
+            // otherwise the cutter is degenerate (e.g. inverted depth) and we keep
+            // the original visible.
+            if kept_fragments.is_empty() {
+                continue;
+            }
+
             if hidden_query.get(brush_entity).is_err() {
                 if let Ok(mut vis) = visibility_query.get_mut(brush_entity) {
                     *vis = Visibility::Hidden;
@@ -1380,19 +1417,15 @@ fn manage_draw_preview_mesh(
                 commands.entity(brush_entity).insert(CutPreviewHidden);
             }
 
-            let kept_fragments = subtract_brush(&world_target, &cutter_planes);
-            for fragment_faces in &kept_fragments {
-                let (frag_verts, frag_polys) = compute_brush_geometry(fragment_faces);
+            for raw_fragment in &kept_fragments {
+                let fragment_faces = clean_degenerate_faces(raw_fragment);
+                if fragment_faces.len() < 4 {
+                    continue;
+                }
+                let (frag_verts, frag_polys) = compute_brush_geometry(&fragment_faces);
                 if frag_verts.len() < 4 {
                     continue;
                 }
-
-                // Shrink vertices slightly toward centroid to prevent z-fighting
-                let centroid = frag_verts.iter().sum::<Vec3>() / frag_verts.len() as f32;
-                let frag_verts: Vec<Vec3> = frag_verts
-                    .iter()
-                    .map(|&v| v + (centroid - v) * 0.002)
-                    .collect();
 
                 for (face_idx, face_data) in fragment_faces.iter().enumerate() {
                     let indices = &frag_polys[face_idx];
@@ -1415,8 +1448,7 @@ fn manage_draw_preview_mesh(
                         face_data.uv_rotation,
                     );
 
-                    let local_tris =
-                        triangulate_face(&(0..indices.len()).collect::<Vec<_>>());
+                    let local_tris = triangulate_face(&(0..indices.len()).collect::<Vec<_>>());
                     let flat_indices: Vec<u32> =
                         local_tris.iter().flat_map(|t| t.iter().copied()).collect();
 
@@ -1426,40 +1458,22 @@ fn manage_draw_preview_mesh(
                     mesh.insert_attribute(Mesh::ATTRIBUTE_UV_0, uvs);
                     mesh.insert_indices(Indices::U32(flat_indices));
 
-                    // Check if this face was created by the cut (normal matches a cutter plane)
-                    let is_cut_face = cutter_planes.iter().any(|cp| {
-                        face_data.plane.normal.abs_diff_eq(cp.plane.normal, 0.01)
-                            && (face_data.plane.distance - cp.plane.distance).abs() < 0.01
-                    });
-
-                    let material = if is_cut_face {
-                        cached_cut_face_material.get_or_insert_with(|| {
-                            materials.add(StandardMaterial {
-                                base_color: Color::srgba(1.0, 0.3, 0.1, 0.5),
-                                alpha_mode: AlphaMode::Blend,
-                                unlit: true,
-                                cull_mode: None,
-                                ..default()
-                            })
-                        }).clone()
-                    } else {
-                        match (&face_data.material_name, &face_data.texture_path) {
-                            (Some(name), _) => mat_def_cache
-                                .entries
-                                .get(name)
-                                .map(|e| e.material.clone())
-                                .unwrap_or_else(|| palette.materials[0].clone()),
-                            (None, Some(path)) => texture_cache
-                                .entries
-                                .get(path)
-                                .map(|e| e.material.clone())
-                                .unwrap_or_else(|| palette.materials[0].clone()),
-                            (None, None) => palette
-                                .materials
-                                .get(face_data.material_index)
-                                .cloned()
-                                .unwrap_or_else(|| palette.materials[0].clone()),
-                        }
+                    let material = match (&face_data.material_name, &face_data.texture_path) {
+                        (Some(name), _) => mat_def_cache
+                            .entries
+                            .get(name)
+                            .map(|e| e.material.clone())
+                            .unwrap_or_else(|| palette.materials[0].clone()),
+                        (None, Some(path)) => texture_cache
+                            .entries
+                            .get(path)
+                            .map(|e| e.material.clone())
+                            .unwrap_or_else(|| palette.materials[0].clone()),
+                        (None, None) => palette
+                            .materials
+                            .get(face_data.material_index)
+                            .cloned()
+                            .unwrap_or_else(|| palette.materials[0].clone()),
                     };
 
                     commands.spawn((
@@ -1567,11 +1581,11 @@ fn build_cutter_planes(active: &ActiveDraw) -> Vec<BrushFaceData> {
             uv_scale: Vec2::ONE,
             ..default()
         },
-        // -Normal face
+        // -Normal face (inset by 0.001 to avoid EPSILON-boundary artifacts)
         BrushFaceData {
             plane: BrushPlane {
                 normal: -plane.normal,
-                distance: (-plane.normal).dot(center) + half_depth,
+                distance: (-plane.normal).dot(center) + half_depth - 0.001,
             },
             uv_scale: Vec2::ONE,
             ..default()
@@ -1600,11 +1614,11 @@ fn build_cutter_planes_polygon(active: &ActiveDraw) -> Vec<BrushFaceData> {
         ..default()
     });
 
-    // Bottom cap (-normal)
+    // Bottom cap (-normal, inset by 0.001 to avoid EPSILON-boundary artifacts)
     faces.push(BrushFaceData {
         plane: BrushPlane {
             normal: -normal,
-            distance: (-normal).dot(center) + half_depth,
+            distance: (-normal).dot(center) + half_depth - 0.001,
         },
         uv_scale: Vec2::ONE,
         ..default()

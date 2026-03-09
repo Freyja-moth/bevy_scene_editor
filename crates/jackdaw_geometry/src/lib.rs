@@ -207,11 +207,38 @@ pub fn brush_planes_to_world(
 }
 
 /// Check whether two convex volumes (defined by face planes) overlap.
+///
+/// Uses separating-axis test on face normals: if every vertex of B is
+/// outside some face of A (or vice-versa), the volumes are separated.
+/// For convex polyhedra this can produce false positives (edge-edge
+/// cases) but never false negatives, which is the safe direction —
+/// we'd rather attempt an unnecessary subtract than miss a real cut.
+/// This avoids the numerical issues of the previous approach which
+/// computed geometry of the combined face set and broke for thin volumes.
 pub fn brushes_intersect(a_faces: &[BrushFaceData], b_faces: &[BrushFaceData]) -> bool {
-    let mut combined: Vec<BrushFaceData> = a_faces.to_vec();
-    combined.extend_from_slice(b_faces);
-    let (verts, _) = compute_brush_geometry(&combined);
-    verts.len() >= 4
+    let (a_verts, _) = compute_brush_geometry(a_faces);
+    let (b_verts, _) = compute_brush_geometry(b_faces);
+    if a_verts.len() < 4 || b_verts.len() < 4 {
+        return false;
+    }
+
+    // Check each face of A as a potential separating plane
+    for face in a_faces {
+        let n = face.plane.normal;
+        let d = face.plane.distance;
+        if b_verts.iter().all(|v| n.dot(*v) > d + EPSILON) {
+            return false;
+        }
+    }
+    // Check each face of B as a potential separating plane
+    for face in b_faces {
+        let n = face.plane.normal;
+        let d = face.plane.distance;
+        if a_verts.iter().all(|v| n.dot(*v) > d + EPSILON) {
+            return false;
+        }
+    }
+    true
 }
 
 /// Subtract a cutter volume from a target brush. Both face sets must be in the same
@@ -233,12 +260,16 @@ pub fn subtract_brush(
         for fragment in &remaining {
             // Outside half: keeps the part outside the cutter through this face
             let mut outside_faces = fragment.clone();
+            let template = &fragment[0];
             outside_faces.push(BrushFaceData {
                 plane: BrushPlane {
                     normal: -n,
                     distance: -d,
                 },
                 uv_scale: Vec2::ONE,
+                material_index: template.material_index,
+                texture_path: template.texture_path.clone(),
+                material_name: template.material_name.clone(),
                 ..default()
             });
             let (outside_verts, _) = compute_brush_geometry(&outside_faces);
@@ -248,12 +279,16 @@ pub fn subtract_brush(
 
             // Inside half: keeps the part inside the cutter through this face
             let mut inside_faces = fragment.clone();
+            let template = &fragment[0];
             inside_faces.push(BrushFaceData {
                 plane: BrushPlane {
                     normal: n,
                     distance: d,
                 },
                 uv_scale: Vec2::ONE,
+                material_index: template.material_index,
+                texture_path: template.texture_path.clone(),
+                material_name: template.material_name.clone(),
                 ..default()
             });
             let (inside_verts, _) = compute_brush_geometry(&inside_faces);
