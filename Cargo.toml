@@ -10,6 +10,10 @@ keywords = ["bevy", "editor", "3d", "level-editor"]
 categories = ["game-development", "graphics"]
 exclude = ["assets/environment_maps/"]
 
+[features]
+default = []
+hot-reload = ["dep:bevy_simple_subsecond_system"]
+
 [workspace]
 members = ["crates/*"]
 
@@ -36,9 +40,11 @@ anyhow.workspace = true
 dirs.workspace = true
 regex.workspace = true
 pathdiff.workspace = true
+notify = "8"
+bevy_simple_subsecond_system = { version = "0.2", optional = true }
 
 [workspace.dependencies]
-bevy = { version = "0.18", features = ["experimental_bevy_feathers", "serialize", "debug", "bevy_remote"] }
+bevy = { version = "0.18", features = ["experimental_bevy_feathers", "serialize", "debug", "bevy_remote", "file_watcher"] }
 jackdaw_jsn = { version = "0.1.5", path = "crates/jackdaw_jsn" }
 jackdaw_geometry = { version = "0.1.5", path = "crates/jackdaw_geometry" }
 bevy_monitors = "0.2"

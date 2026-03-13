@@ -7,6 +7,7 @@ use std::path::{Path, PathBuf};
 use std::result::Result;
 
 use bevy::asset::{ReflectAsset, ReflectHandle, UntypedAssetId};
+use bevy::image::ImageLoaderSettings;
 use bevy::reflect::serde::{ReflectDeserializerProcessor, ReflectSerializerProcessor};
 use bevy::reflect::{TypeRegistration, TypeRegistry};
 use bevy::{
@@ -677,11 +678,15 @@ fn collect_handles_from_reflect(
             return;
         }
 
-        // Check catalog first — if this handle is a catalog asset, emit @Name
-        // and don't inline it into the scene's asset table
+        // Check catalog first — if this handle is a catalog asset with an @Name,
+        // emit @Name and don't inline it into the scene's asset table.
+        // Skip #-prefixed entries (internal catalog references like #Image8)
+        // because those are only meaningful inside the catalog, not in scenes.
         if let Some(catalog_name) = catalog_id_to_name.get(&untyped_handle.id()) {
-            id_to_name.insert(untyped_handle.id(), catalog_name.clone());
-            return;
+            if catalog_name.starts_with('@') {
+                id_to_name.insert(untyped_handle.id(), catalog_name.clone());
+                return;
+            }
         }
 
         // External file-backed resource — store as a path string entry
@@ -1163,6 +1168,31 @@ fn finish_load_scene(world: &mut World, chosen: &std::path::Path) {
 
 /// Deserialize inline assets from the generic assets table.
 /// Returns a map of `#Name` / `@Name` → `UntypedHandle` for the deserializer processor.
+/// Scan material definitions in JsnAssets to find image names used in non-color slots.
+/// These images must be loaded with `is_srgb = false` to avoid gamma decoding artifacts.
+fn collect_linear_image_names(assets: &JsnAssets) -> HashSet<String> {
+    const LINEAR_SLOTS: &[&str] = &[
+        "normal_map_texture",
+        "metallic_roughness_texture",
+        "occlusion_texture",
+        "depth_map",
+    ];
+    let mut linear_names = HashSet::new();
+    let mat_type = "bevy_pbr::pbr_material::StandardMaterial";
+    if let Some(materials) = assets.0.get(mat_type) {
+        for json_value in materials.values() {
+            if let serde_json::Value::Object(obj) = json_value {
+                for slot in LINEAR_SLOTS {
+                    if let Some(serde_json::Value::String(img_name)) = obj.get(*slot) {
+                        linear_names.insert(img_name.clone());
+                    }
+                }
+            }
+        }
+    }
+    linear_names
+}
+
 pub fn load_inline_assets(
     world: &mut World,
     assets: &JsnAssets,
@@ -1175,6 +1205,8 @@ pub fn load_inline_assets(
         .get_resource::<crate::asset_catalog::AssetCatalog>()
         .map(|c| c.handles.clone())
         .unwrap_or_default();
+
+    let linear_image_names = collect_linear_image_names(assets);
 
     let registry = world.resource::<AppTypeRegistry>().clone();
     let registry_guard = registry.read();
@@ -1206,7 +1238,16 @@ pub fn load_inline_assets(
             let path_str = abs_path.to_string_lossy().into_owned();
 
             let handle = if type_path == "bevy_image::image::Image" {
-                asset_server.load::<Image>(&path_str).untyped()
+                if linear_image_names.contains(name) {
+                    asset_server
+                        .load_with_settings::<Image, ImageLoaderSettings>(
+                            &path_str,
+                            |s: &mut ImageLoaderSettings| s.is_srgb = false,
+                        )
+                        .untyped()
+                } else {
+                    asset_server.load::<Image>(&path_str).untyped()
+                }
             } else {
                 warn!(
                     "External asset entry '{name}' has unknown type '{type_path}' — loading untyped"

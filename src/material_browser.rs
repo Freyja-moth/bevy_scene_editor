@@ -3,6 +3,7 @@ use std::path::{Path, PathBuf};
 
 use bevy::{
     feathers::theme::ThemedText,
+    image::ImageLoaderSettings,
     prelude::*,
     tasks::{AsyncComputeTaskPool, Task, futures_lite::future},
     ui_widgets::observe,
@@ -126,7 +127,7 @@ struct PreviewAreaImage;
 struct PreviewAreaLabel;
 
 /// PBR filename regex pattern.
-fn pbr_filename_regex() -> Option<regex::Regex> {
+pub(crate) fn pbr_filename_regex() -> Option<regex::Regex> {
     let pattern = r"(?i)^(.+?)[_\-\.\s](diffuse|diff|albedo|base|col|color|basecolor|metallic|metalness|metal|mtl|roughness|rough|rgh|normal|normaldx|normalgl|nor|nrm|nrml|norm|orm|emission|emissive|emit|ao|ambient|occlusion|ambientocclusion|displacement|displace|disp|dsp|height|heightmap|alpha|opacity|specularity|specular|spec|spc|gloss|glossy|glossiness|bump|bmp|b|n)\.(png|jpg|jpeg|ktx2|bmp|tga|webp)$";
     regex::Regex::new(pattern).ok()
 }
@@ -185,26 +186,38 @@ fn detect_and_create_materials(
                     base_color_texture = Some(asset_server.load::<Image>(asset_path.clone()));
                 }
                 "normalgl" | "nor" | "nrm" | "nrml" | "norm" | "bump" | "bmp" | "n" | "normal" => {
-                    normal_map_texture = Some(asset_server.load::<Image>(asset_path.clone()));
+                    normal_map_texture = Some(asset_server.load_with_settings::<Image, ImageLoaderSettings>(
+                        asset_path.clone(),
+                        |s: &mut ImageLoaderSettings| s.is_srgb = false,
+                    ));
                 }
                 "orm" | "metallic" | "metalness" | "metal" | "mtl" | "roughness" | "rough"
                 | "rgh" => {
                     if metallic_roughness_texture.is_none() {
                         metallic_roughness_texture =
-                            Some(asset_server.load::<Image>(asset_path.clone()));
+                            Some(asset_server.load_with_settings::<Image, ImageLoaderSettings>(
+                                asset_path.clone(),
+                                |s: &mut ImageLoaderSettings| s.is_srgb = false,
+                            ));
                     }
                 }
                 "emission" | "emissive" | "emit" => {
                     emissive_texture = Some(asset_server.load::<Image>(asset_path.clone()));
                 }
                 "ao" | "ambient" | "occlusion" | "ambientocclusion" => {
-                    occlusion_texture = Some(asset_server.load::<Image>(asset_path.clone()));
+                    occlusion_texture = Some(asset_server.load_with_settings::<Image, ImageLoaderSettings>(
+                        asset_path.clone(),
+                        |s: &mut ImageLoaderSettings| s.is_srgb = false,
+                    ));
                 }
                 "displacement" | "displace" | "disp" | "dsp" | "height" | "heightmap" => {
                     // Skip 16-bit integer PNGs — Bevy decodes them as R16Uint which
                     // is incompatible with StandardMaterial's float-filterable depth_map slot.
                     if !is_16bit_png(Path::new(asset_path)) {
-                        depth_map = Some(asset_server.load::<Image>(asset_path.clone()));
+                        depth_map = Some(asset_server.load_with_settings::<Image, ImageLoaderSettings>(
+                            asset_path.clone(),
+                            |s: &mut ImageLoaderSettings| s.is_srgb = false,
+                        ));
                     }
                 }
                 _ => {}

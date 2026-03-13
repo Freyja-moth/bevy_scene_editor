@@ -4,7 +4,9 @@ use bevy::{
 };
 
 use crate::types::Brush;
-use jackdaw_geometry::{compute_brush_geometry, compute_face_uvs, triangulate_face};
+use jackdaw_geometry::{
+    compute_brush_geometry, compute_face_tangent_axes, compute_face_uvs, triangulate_face,
+};
 
 /// Simplified runtime mesh rebuild for consumers (no editor material palette,
 /// no BrushFaceEntity, no texture cache — just a single mesh child per brush).
@@ -20,6 +22,7 @@ pub(crate) fn rebuild_brush_meshes(
         let mut all_positions: Vec<[f32; 3]> = Vec::new();
         let mut all_normals: Vec<[f32; 3]> = Vec::new();
         let mut all_uvs: Vec<[f32; 2]> = Vec::new();
+        let mut all_tangents: Vec<[f32; 4]> = Vec::new();
         let mut all_indices: Vec<u32> = Vec::new();
 
         for (face_idx, face_data) in brush.faces.iter().enumerate() {
@@ -46,6 +49,15 @@ pub(crate) fn rebuild_brush_meshes(
             );
             all_uvs.extend_from_slice(&uvs);
 
+            let (u_axis, v_axis) = compute_face_tangent_axes(face_data.plane.normal);
+            let w = face_data
+                .plane
+                .normal
+                .dot(u_axis.cross(v_axis))
+                .signum();
+            let tangent = [u_axis.x, u_axis.y, u_axis.z, w];
+            all_tangents.extend(std::iter::repeat_n(tangent, indices.len()));
+
             // Fan triangulate with local indices
             let local_indices: Vec<usize> = (0..indices.len()).collect();
             let tris = triangulate_face(&local_indices);
@@ -64,6 +76,7 @@ pub(crate) fn rebuild_brush_meshes(
         mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, all_positions);
         mesh.insert_attribute(Mesh::ATTRIBUTE_NORMAL, all_normals);
         mesh.insert_attribute(Mesh::ATTRIBUTE_UV_0, all_uvs);
+        mesh.insert_attribute(Mesh::ATTRIBUTE_TANGENT, all_tangents);
         mesh.insert_indices(Indices::U32(all_indices));
 
         let mesh_handle = meshes.add(mesh);

@@ -1,4 +1,5 @@
 use std::path::{Path, PathBuf};
+use std::sync::{Mutex, mpsc};
 
 use bevy::{
     asset::RenderAssetUsages,
@@ -18,6 +19,7 @@ use crate::{
     EditorEntity,
     brush::{Brush, BrushEditMode, BrushSelection, EditMode, LastUsedMaterial, SetBrush},
     commands::CommandHistory,
+    material_browser::{MaterialRegistry, pbr_filename_regex},
     selection::Selection,
 };
 
@@ -37,6 +39,44 @@ pub fn is_ktx2_non_2d(path: &Path) -> bool {
     pixel_depth > 0 || layer_count > 1 || face_count > 1
 }
 
+/// Watches the asset root directory for filesystem changes using the `notify` crate.
+#[derive(Resource)]
+struct DirectoryWatcher {
+    _watcher: notify::RecommendedWatcher,
+    receiver: Mutex<mpsc::Receiver<()>>,
+}
+
+fn setup_directory_watcher(root: &Path, commands: &mut Commands) {
+    let (tx, rx) = mpsc::channel();
+    let watcher = notify::recommended_watcher(move |res: Result<notify::Event, notify::Error>| {
+        if let Ok(event) = res {
+            use notify::EventKind;
+            if matches!(
+                event.kind,
+                EventKind::Create(_) | EventKind::Remove(_) | EventKind::Modify(notify::event::ModifyKind::Name(_))
+            ) {
+                let _ = tx.send(());
+            }
+        }
+    });
+    match watcher {
+        Ok(mut w) => {
+            use notify::Watcher;
+            if w.watch(root, notify::RecursiveMode::Recursive).is_ok() {
+                commands.insert_resource(DirectoryWatcher {
+                    _watcher: w,
+                    receiver: Mutex::new(rx),
+                });
+            } else {
+                warn!("Failed to watch directory: {:?}", root);
+            }
+        }
+        Err(e) => {
+            warn!("Failed to create directory watcher: {}", e);
+        }
+    }
+}
+
 pub struct AssetBrowserPlugin;
 
 impl Plugin for AssetBrowserPlugin {
@@ -52,6 +92,7 @@ impl Plugin for AssetBrowserPlugin {
                     poll_asset_browser_folder,
                     extract_array_layers,
                     update_preview_panel,
+                    check_watcher_events,
                 )
                     .run_if(in_state(crate::AppState::Editor)),
             )
@@ -200,6 +241,7 @@ fn read_ktx2_info(path: &Path) -> (u32, u32) {
 
 fn setup_initial_directory(
     mut state: ResMut<AssetBrowserState>,
+    mut commands: Commands,
     project_root: Option<Res<crate::project::ProjectRoot>>,
 ) {
     if let Some(project) = project_root {
@@ -214,6 +256,8 @@ fn setup_initial_directory(
         }
     }
     state.needs_refresh = true;
+
+    setup_directory_watcher(&state.root_directory, &mut commands);
 }
 
 fn refresh_browser_on_change(
@@ -558,6 +602,19 @@ fn handle_file_double_click(
     }
 }
 
+/// If the texture filename matches a PBR naming convention, look up the
+/// base name in the material registry and return the catalog handle.
+fn try_find_registry_material(
+    path: &str,
+    registry: &MaterialRegistry,
+) -> Option<Handle<StandardMaterial>> {
+    let re = pbr_filename_regex()?;
+    let filename = Path::new(path).file_name()?.to_str()?;
+    let caps = re.captures(filename)?;
+    let base_name = caps.get(1)?.as_str().to_lowercase();
+    registry.get_by_name(&base_name).map(|e| e.handle.clone())
+}
+
 fn handle_apply_texture(
     event: On<ApplyTextureToFaces>,
     brush_selection: Res<BrushSelection>,
@@ -568,13 +625,18 @@ fn handle_apply_texture(
     mut last_material: ResMut<LastUsedMaterial>,
     asset_server: Res<AssetServer>,
     mut materials: ResMut<Assets<StandardMaterial>>,
+    registry: Res<MaterialRegistry>,
 ) {
-    // Create a StandardMaterial from the texture path
-    let image: Handle<Image> = asset_server.load(event.path.clone());
-    let material = materials.add(StandardMaterial {
-        base_color_texture: Some(image),
-        ..default()
-    });
+    // Check if the texture belongs to a known material definition
+    let material = if let Some(handle) = try_find_registry_material(&event.path, &registry) {
+        handle
+    } else {
+        let image: Handle<Image> = asset_server.load(event.path.clone());
+        materials.add(StandardMaterial {
+            base_color_texture: Some(image),
+            ..default()
+        })
+    };
 
     if *edit_mode == EditMode::BrushEdit(BrushEditMode::Face) && !brush_selection.faces.is_empty() {
         if let Some(entity) = brush_selection.entity {
@@ -1000,12 +1062,16 @@ fn poll_asset_browser_folder(world: &mut World) {
     };
     world.remove_resource::<AssetBrowserFolderTask>();
 
-    if let Some(handle) = result {
-        let path = handle.path().to_path_buf();
+    if let Some(file_handle) = result {
+        let path = file_handle.path().to_path_buf();
         let mut state = world.resource_mut::<AssetBrowserState>();
         state.root_directory = path.clone();
         state.current_directory = path.clone();
         state.needs_refresh = true;
+
+        // Set up filesystem watcher for the new root.
+        let mut commands = world.commands();
+        setup_directory_watcher(&path, &mut commands);
 
         let mut label_query = world.query_filtered::<&mut Text, With<AssetBrowserRootLabel>>();
         for mut text in label_query.iter_mut(world) {
@@ -1156,4 +1222,22 @@ fn asset_folder_button(icon_font: Handle<Font>) -> impl Bundle {
         ),
         observe(spawn_asset_folder_dialog),
     )
+}
+
+/// Checks for filesystem events from the `notify` watcher and triggers browser refreshes.
+fn check_watcher_events(
+    watcher: Option<Res<DirectoryWatcher>>,
+    mut browser: ResMut<AssetBrowserState>,
+    mut material_browser: ResMut<crate::material_browser::MaterialBrowserState>,
+) {
+    let Some(watcher) = watcher else { return };
+    let Ok(rx) = watcher.receiver.lock() else { return };
+    let mut changed = false;
+    while rx.try_recv().is_ok() {
+        changed = true;
+    }
+    if changed {
+        browser.needs_refresh = true;
+        material_browser.needs_rescan = true;
+    }
 }

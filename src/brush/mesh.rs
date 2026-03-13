@@ -6,7 +6,9 @@ use bevy::{
 use super::{BrushFaceEntity, BrushMaterialPalette, BrushMeshCache, BrushPreview};
 use crate::NonSerializable;
 use crate::draw_brush::DrawBrushState;
-use jackdaw_geometry::{compute_brush_geometry, compute_face_uvs, triangulate_face};
+use jackdaw_geometry::{
+    compute_brush_geometry, compute_face_tangent_axes, compute_face_uvs, triangulate_face,
+};
 
 pub(super) fn setup_default_materials(
     mut materials: ResMut<Assets<StandardMaterial>>,
@@ -89,6 +91,11 @@ pub fn regenerate_brush_meshes(
                 face_data.uv_rotation,
             );
 
+            let (u_axis, v_axis) = compute_face_tangent_axes(face_data.plane.normal);
+            let w = face_data.plane.normal.dot(u_axis.cross(v_axis)).signum();
+            let tangent = [u_axis.x, u_axis.y, u_axis.z, w];
+            let tangents: Vec<[f32; 4]> = vec![tangent; indices.len()];
+
             // Fan triangulate — local indices (0..positions.len())
             let local_tris = triangulate_face(&(0..indices.len()).collect::<Vec<_>>());
             let flat_indices: Vec<u32> =
@@ -98,6 +105,7 @@ pub fn regenerate_brush_meshes(
             mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, positions);
             mesh.insert_attribute(Mesh::ATTRIBUTE_NORMAL, normals);
             mesh.insert_attribute(Mesh::ATTRIBUTE_UV_0, uvs);
+            mesh.insert_attribute(Mesh::ATTRIBUTE_TANGENT, tangents);
             mesh.insert_indices(Indices::U32(flat_indices));
 
             let mesh_handle = meshes.add(mesh);

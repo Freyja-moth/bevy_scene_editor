@@ -1,5 +1,6 @@
 use bevy::{
     asset::{AssetPlugin, UnapprovedPathMode},
+    image::{ImageAddressMode, ImagePlugin, ImageSamplerDescriptor},
     light::GlobalAmbientLight,
     prelude::*,
 };
@@ -10,11 +11,22 @@ fn main() -> AppExit {
         .unwrap_or_else(|| std::env::current_dir().unwrap_or_default());
 
     App::new()
-        .add_plugins(DefaultPlugins.set(AssetPlugin {
-            file_path: project_root.join("assets").to_string_lossy().to_string(),
-            unapproved_path_mode: UnapprovedPathMode::Allow,
-            ..default()
-        }))
+        .add_plugins(
+            DefaultPlugins
+                .set(AssetPlugin {
+                    file_path: project_root.join("assets").to_string_lossy().to_string(),
+                    unapproved_path_mode: UnapprovedPathMode::Allow,
+                    ..default()
+                })
+                .set(ImagePlugin {
+                    default_sampler: ImageSamplerDescriptor {
+                        address_mode_u: ImageAddressMode::Repeat,
+                        address_mode_v: ImageAddressMode::Repeat,
+                        address_mode_w: ImageAddressMode::Repeat,
+                        ..ImageSamplerDescriptor::linear()
+                    },
+                }),
+        )
         .add_plugins(EditorPlugin)
         .add_systems(OnEnter(jackdaw::AppState::Editor), spawn_scene)
         .run()
