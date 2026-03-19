@@ -1403,7 +1403,7 @@ fn manage_draw_preview_mesh(
     mut materials: ResMut<Assets<StandardMaterial>>,
     preview_query: Query<Entity, With<DrawPreviewMesh>>,
     result_preview_query: Query<Entity, With<CutResultPreviewMesh>>,
-    brushes: Query<(Entity, &Brush, &GlobalTransform)>,
+    brushes: Query<(Entity, &Brush, &GlobalTransform, Has<Selected>)>,
     hidden_query: Query<Entity, (With<CutPreviewHidden>, With<Brush>)>,
     mut visibility_query: Query<&mut Visibility>,
     palette: Res<BrushMaterialPalette>,
@@ -1575,7 +1575,7 @@ fn manage_draw_preview_mesh(
 
     // In Cut mode, spawn solid result preview meshes for affected brushes
     if active.mode == DrawMode::Cut {
-        for (brush_entity, brush, brush_tf) in brushes.iter() {
+        for (brush_entity, brush, brush_tf, is_selected) in brushes.iter() {
             let (_, rotation, translation) = brush_tf.to_scale_rotation_translation();
             let world_target = brush_planes_to_world(&brush.faces, rotation, translation);
 
@@ -1662,8 +1662,10 @@ fn manage_draw_preview_mesh(
 
                     let material = if face_data.material != Handle::default() {
                         face_data.material.clone()
-                    } else {
+                    } else if is_selected {
                         palette.default_selected_material.clone()
+                    } else {
+                        palette.default_material.clone()
                     };
 
                     let face_world_verts: Vec<Vec3> =
