@@ -628,6 +628,8 @@ fn handle_apply_texture(
     asset_server: Res<AssetServer>,
     mut materials: ResMut<Assets<StandardMaterial>>,
     registry: Res<MaterialRegistry>,
+    brush_groups: Query<(), With<jackdaw_jsn::types::BrushGroup>>,
+    children_query: Query<&Children>,
 ) {
     // Check if the texture belongs to a known material definition
     let material = if let Some(handle) = try_find_registry_material(&event.path, &registry) {
@@ -660,7 +662,22 @@ fn handle_apply_texture(
             }
         }
     } else {
-        for &entity in &selection.entities {
+        // Collect targets, expanding BrushGroups into their child brushes
+        let targets: Vec<Entity> = selection
+            .entities
+            .iter()
+            .flat_map(|&e| {
+                if brush_groups.contains(e) {
+                    children_query
+                        .get(e)
+                        .map(|c| c.iter().collect::<Vec<_>>())
+                        .unwrap_or_default()
+                } else {
+                    vec![e]
+                }
+            })
+            .collect();
+        for entity in targets {
             if let Ok(mut brush) = brushes.get_mut(entity) {
                 let old = brush.clone();
                 for face in brush.faces.iter_mut() {

@@ -6,6 +6,12 @@ use serde::{Deserialize, Serialize};
 // Re-export geometry types so consumers see them from jackdaw_jsn
 pub use jackdaw_geometry::{BrushFaceData, BrushPlane, compute_face_tangent_axes};
 
+/// Groups multiple convex brush fragments produced by CSG subtraction.
+/// Fragments become children of the group entity.
+#[derive(Component, Reflect, Clone, Debug, Default)]
+#[reflect(Component, Default)]
+pub struct BrushGroup;
+
 /// Canonical brush data. Serialized. Geometry derived from this.
 #[derive(Component, Reflect, Clone, Debug, Default)]
 #[reflect(Component, Default)]

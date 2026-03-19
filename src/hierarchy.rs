@@ -26,6 +26,7 @@ use crate::{
     selection::{Selected, Selection},
 };
 use jackdaw_feathers::dialog::{DialogActionEvent, DialogChildrenSlot};
+use jackdaw_jsn::BrushGroup;
 
 /// Stores the default name for the template save dialog.
 #[derive(Resource, Default)]
@@ -105,6 +106,9 @@ impl Plugin for HierarchyPlugin {
 
 /// Classify a scene entity by its primary component for tree display.
 fn classify_entity(world: &World, entity: Entity) -> EntityCategory {
+    if world.get::<BrushGroup>(entity).is_some() {
+        return EntityCategory::Mesh;
+    }
     if world.get::<Camera>(entity).is_some() {
         return EntityCategory::Camera;
     }

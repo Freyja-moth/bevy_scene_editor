@@ -5,6 +5,7 @@ use crate::{
     selection::Selection,
     viewport::{MainViewportCamera, SceneViewport},
 };
+use jackdaw_jsn::BrushGroup;
 use bevy::input_focus::InputFocus;
 use bevy::{
     picking::mesh_picking::ray_cast::{MeshRayCast, MeshRayCastSettings, RayCastVisibility},
@@ -21,11 +22,19 @@ pub struct ViewportSelectPlugin;
 
 impl Plugin for ViewportSelectPlugin {
     fn build(&self, app: &mut App) {
-        app.init_resource::<BoxSelectState>().add_systems(
-            Update,
-            (handle_viewport_click, handle_box_select, update_box_select_overlay)
-                .in_set(crate::EditorInteraction),
-        );
+        app.init_resource::<BoxSelectState>()
+            .init_resource::<GroupEditState>()
+            .init_resource::<LastClick>()
+            .add_systems(
+                Update,
+                (
+                    handle_viewport_click,
+                    handle_box_select,
+                    update_box_select_overlay,
+                    exit_group_on_escape,
+                )
+                    .in_set(crate::EditorInteraction),
+            );
     }
 }
 
@@ -36,6 +45,20 @@ pub struct BoxSelectState {
     pub current: Vec2,
 }
 
+/// Tracks whether the user is editing inside a BrushGroup (entered via double-click).
+#[derive(Resource, Default)]
+pub struct GroupEditState {
+    /// The BrushGroup entity we're currently editing inside of.
+    pub active_group: Option<Entity>,
+}
+
+/// Tracks last click for double-click detection.
+#[derive(Resource, Default)]
+pub(crate) struct LastClick {
+    entity: Option<Entity>,
+    time: f64,
+}
+
 pub(crate) fn handle_viewport_click(
     mouse: Res<ButtonInput<MouseButton>>,
     keyboard: Res<ButtonInput<KeyCode>>,
@@ -44,18 +67,22 @@ pub(crate) fn handle_viewport_click(
     viewport_query: Query<(&ComputedNode, &UiGlobalTransform), With<SceneViewport>>,
     scene_entities: Query<(Entity, &GlobalTransform), (Without<EditorEntity>, With<Transform>)>,
     parents: Query<&ChildOf>,
-    gizmo_drag: Res<GizmoDragState>,
-    modal: Res<ModalTransformState>,
-    vp_drag: Res<ViewportDragState>,
+    brush_groups: Query<(), With<BrushGroup>>,
+    (gizmo_drag, modal, vp_drag): (Res<GizmoDragState>, Res<ModalTransformState>, Res<ViewportDragState>),
     mut selection: ResMut<Selection>,
     mut input_focus: ResMut<InputFocus>,
     mut commands: Commands,
-    (edit_mode, draw_state): (
+    (edit_mode, draw_state, terrain_edit_mode): (
         Res<crate::brush::EditMode>,
         Res<crate::draw_brush::DrawBrushState>,
+        Res<crate::terrain::TerrainEditMode>,
     ),
-    terrain_edit_mode: Res<crate::terrain::TerrainEditMode>,
     mut ray_cast: MeshRayCast,
+    (mut group_edit, mut last_click, time): (
+        ResMut<GroupEditState>,
+        ResMut<LastClick>,
+        Res<Time>,
+    ),
 ) {
     let shift = keyboard.any_pressed([KeyCode::ShiftLeft, KeyCode::ShiftRight]);
 
@@ -120,8 +147,13 @@ pub(crate) fn handle_viewport_click(
 
         // Find the first hit that resolves to a scene entity (skip editor entities)
         for (hit_entity, _) in hits {
-            if let Some(ancestor) = find_selectable_ancestor(*hit_entity, &scene_entities, &parents)
-            {
+            if let Some(ancestor) = find_selectable_ancestor(
+                *hit_entity,
+                &scene_entities,
+                &parents,
+                &group_edit,
+                &brush_groups,
+            ) {
                 best_entity = Some(ancestor);
                 break;
             }
@@ -134,8 +166,13 @@ pub(crate) fn handle_viewport_click(
             if let Some(current_primary) = selection.primary() {
                 if candidate != current_primary {
                     for (hit_entity, _) in hits {
-                        if find_selectable_ancestor(*hit_entity, &scene_entities, &parents)
-                            == Some(current_primary)
+                        if find_selectable_ancestor(
+                            *hit_entity,
+                            &scene_entities,
+                            &parents,
+                            &group_edit,
+                            &brush_groups,
+                        ) == Some(current_primary)
                         {
                             return;
                         }
@@ -160,7 +197,22 @@ pub(crate) fn handle_viewport_click(
         }
     }
 
+    // Double-click detection: if same entity clicked within 400ms, enter group
+    let now = time.elapsed_secs_f64();
     if let Some(entity) = best_entity {
+        let is_double_click = last_click.entity == Some(entity) && (now - last_click.time) < 0.4;
+
+        if is_double_click && brush_groups.contains(entity) {
+            // Double-click on a BrushGroup: enter group edit mode
+            group_edit.active_group = Some(entity);
+            last_click.entity = None;
+            last_click.time = 0.0;
+            return;
+        }
+
+        last_click.entity = Some(entity);
+        last_click.time = now;
+
         let ctrl = keyboard.any_pressed([KeyCode::ControlLeft, KeyCode::ControlRight]);
         if ctrl {
             selection.toggle(&mut commands, entity);
@@ -168,7 +220,13 @@ pub(crate) fn handle_viewport_click(
             selection.select_single(&mut commands, entity);
         }
     } else {
-        // Clicked on empty space — deselect all (unless Ctrl held)
+        last_click.entity = None;
+        last_click.time = 0.0;
+
+        // Clicked on empty space — exit group edit and deselect all (unless Ctrl held)
+        if group_edit.active_group.is_some() {
+            group_edit.active_group = None;
+        }
         let ctrl = keyboard.any_pressed([KeyCode::ControlLeft, KeyCode::ControlRight]);
         if !ctrl {
             selection.clear(&mut commands);
@@ -307,10 +365,15 @@ fn update_box_select_overlay(
 /// Walk up the `ChildOf` hierarchy from a raycast hit entity to find the
 /// top-level scene entity (one that appears in `scene_entities`).
 /// Handles GLTF child meshes and brush face children.
+///
+/// When inside a group (`GroupEditState::active_group` is set), stops at children
+/// of that group so individual fragments can be selected.
 fn find_selectable_ancestor(
     mut entity: Entity,
     scene_entities: &Query<(Entity, &GlobalTransform), (Without<EditorEntity>, With<Transform>)>,
     parents: &Query<&ChildOf>,
+    group_edit: &GroupEditState,
+    brush_groups: &Query<(), With<BrushGroup>>,
 ) -> Option<Entity> {
     // Walk up until we find a scene entity (one that has Transform and is not EditorEntity)
     // Start with the hit entity itself — it may already be a scene entity
@@ -321,6 +384,13 @@ fn find_selectable_ancestor(
             if let Ok(child_of) = parents.get(entity) {
                 let parent = child_of.0;
                 if scene_entities.contains(parent) {
+                    // If we're inside a group and this parent IS that group,
+                    // stop here — let the user select the child fragment.
+                    if group_edit.active_group == Some(parent)
+                        && brush_groups.contains(parent)
+                    {
+                        return Some(entity);
+                    }
                     // Keep walking up — the parent is also selectable
                     entity = parent;
                     continue;
@@ -333,5 +403,19 @@ fn find_selectable_ancestor(
         } else {
             return None;
         }
+    }
+}
+
+/// Exit BrushGroup edit mode when Escape is pressed.
+fn exit_group_on_escape(
+    keyboard: Res<ButtonInput<KeyCode>>,
+    mut group_edit: ResMut<GroupEditState>,
+    input_focus: Res<InputFocus>,
+) {
+    if keyboard.just_pressed(KeyCode::Escape)
+        && group_edit.active_group.is_some()
+        && input_focus.0.is_none()
+    {
+        group_edit.active_group = None;
     }
 }

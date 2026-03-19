@@ -625,6 +625,8 @@ fn handle_apply_material(
     selection: Res<Selection>,
     mut brushes: Query<&mut Brush>,
     mut history: ResMut<CommandHistory>,
+    brush_groups: Query<(), With<jackdaw_jsn::types::BrushGroup>>,
+    children_query: Query<&Children>,
 ) {
     if *edit_mode == EditMode::BrushEdit(BrushEditMode::Face) && !brush_selection.faces.is_empty() {
         if let Some(entity) = brush_selection.entity {
@@ -646,7 +648,22 @@ fn handle_apply_material(
             }
         }
     } else {
-        for &entity in &selection.entities {
+        // Collect targets, expanding BrushGroups into their child brushes
+        let targets: Vec<Entity> = selection
+            .entities
+            .iter()
+            .flat_map(|&e| {
+                if brush_groups.contains(e) {
+                    children_query
+                        .get(e)
+                        .map(|c| c.iter().collect::<Vec<_>>())
+                        .unwrap_or_default()
+                } else {
+                    vec![e]
+                }
+            })
+            .collect();
+        for entity in targets {
             if let Ok(mut brush) = brushes.get_mut(entity) {
                 let old = brush.clone();
                 for face in brush.faces.iter_mut() {

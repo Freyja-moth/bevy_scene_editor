@@ -11,8 +11,8 @@ use crate::{
     EditorEntity,
     brush::{BrushFaceEntity, BrushMaterialPalette},
     commands::{
-        CommandGroup, CommandHistory, DespawnEntity, EditorCommand, snapshot_entity,
-        snapshot_rebuild,
+        CommandGroup, CommandHistory, DespawnEntity, EditorCommand, collect_entity_ids,
+        snapshot_entity, snapshot_rebuild,
     },
     selection::{Selected, Selection},
     snapping::SnapSettings,
@@ -24,7 +24,7 @@ use jackdaw_geometry::{
     compute_face_tangent_axes, compute_face_uvs, intersect_brushes, subtract_brush,
     triangulate_face,
 };
-use jackdaw_jsn::{Brush, BrushFaceData, BrushPlane};
+use jackdaw_jsn::{Brush, BrushFaceData, BrushGroup, BrushPlane};
 
 const EXTRUDE_DEPTH_SENSITIVITY: f32 = 0.003;
 const MIN_FOOTPRINT_SIZE: f32 = 0.01;
@@ -1947,10 +1947,12 @@ fn subtract_drawn_brush(active: &ActiveDraw, commands: &mut Commands) {
             }
         }
 
-        // Spawn fragments
-        let mut fragment_snapshots: Vec<(Entity, DynamicScene)> = Vec::new();
+        // Spawn fragments (group multi-fragment results under a BrushGroup parent)
+        let mut result_snapshots: Vec<(Entity, DynamicScene)> = Vec::new();
         for result in &results {
-            for (brush, transform) in &result.fragments {
+            if result.fragments.len() == 1 {
+                // Single fragment: spawn standalone
+                let (brush, transform) = &result.fragments[0];
                 let entity = world
                     .spawn((
                         Name::new("Brush"),
@@ -1962,14 +1964,44 @@ fn subtract_drawn_brush(active: &ActiveDraw, commands: &mut Commands) {
                 let snapshot = DynamicSceneBuilder::from_world(world)
                     .extract_entities(std::iter::once(entity))
                     .build();
-                fragment_snapshots.push((entity, snapshot));
+                result_snapshots.push((entity, snapshot));
+            } else if result.fragments.len() > 1 {
+                // Multiple fragments: group under a BrushGroup parent
+                let group_center = result
+                    .fragments
+                    .iter()
+                    .map(|(_, tf)| tf.translation)
+                    .sum::<Vec3>()
+                    / result.fragments.len() as f32;
+
+                let group_entity = world
+                    .spawn((
+                        Name::new("Brush Group"),
+                        BrushGroup,
+                        Transform::from_translation(group_center),
+                        Visibility::default(),
+                    ))
+                    .id();
+
+                for (brush, transform) in &result.fragments {
+                    world.spawn((
+                        Name::new("Brush"),
+                        brush.clone(),
+                        Transform::from_translation(transform.translation - group_center),
+                        Visibility::default(),
+                        ChildOf(group_entity),
+                    ));
+                }
+
+                let snapshot = snapshot_entity(world, group_entity);
+                result_snapshots.push((group_entity, snapshot));
             }
         }
 
         // Push undo command
         let cmd = SubtractBrushCommand {
             originals: original_snapshots,
-            fragments: fragment_snapshots,
+            fragments: result_snapshots,
         };
         let mut history = world.resource_mut::<CommandHistory>();
         history.undo_stack.push(Box::new(cmd));
@@ -1980,7 +2012,7 @@ fn subtract_drawn_brush(active: &ActiveDraw, commands: &mut Commands) {
 struct SubtractBrushCommand {
     /// Original brushes to restore on undo (entity + snapshot).
     originals: Vec<(Entity, DynamicScene)>,
-    /// Fragment brushes spawned by the subtraction (entity + snapshot).
+    /// Result entities: standalone brushes or BrushGroup parents (with children in snapshot).
     fragments: Vec<(Entity, DynamicScene)>,
 }
 
@@ -2009,11 +2041,14 @@ impl EditorCommand for SubtractBrushCommand {
     }
 
     fn undo(&self, world: &mut World) {
-        // Undo: clean up selection, despawn fragments, respawn originals
+        // Undo: clean up selection, despawn fragments (groups cascade), respawn originals
         {
-            let entities: Vec<Entity> = self.fragments.iter().map(|(e, _)| *e).collect();
+            let mut all_entities = Vec::new();
+            for (e, _) in &self.fragments {
+                collect_entity_ids(world, *e, &mut all_entities);
+            }
             let mut selection = world.resource_mut::<Selection>();
-            selection.entities.retain(|e| !entities.contains(e));
+            selection.entities.retain(|e| !all_entities.contains(e));
         }
         for (entity, _) in &self.fragments {
             if let Ok(mut e) = world.get_entity_mut(*entity) {
@@ -2437,10 +2472,11 @@ pub fn csg_subtract_selected_impl(world: &mut World) {
         }
     }
 
-    // Spawn fragments
-    let mut fragment_snapshots: Vec<(Entity, DynamicScene)> = Vec::new();
+    // Spawn fragments (group multi-fragment results under a BrushGroup parent)
+    let mut result_snapshots: Vec<(Entity, DynamicScene)> = Vec::new();
     for result in &results {
-        for (brush, transform) in &result.fragments {
+        if result.fragments.len() == 1 {
+            let (brush, transform) = &result.fragments[0];
             let entity = world
                 .spawn((
                     Name::new("Brush"),
@@ -2452,14 +2488,43 @@ pub fn csg_subtract_selected_impl(world: &mut World) {
             let snapshot = DynamicSceneBuilder::from_world(world)
                 .extract_entities(std::iter::once(entity))
                 .build();
-            fragment_snapshots.push((entity, snapshot));
+            result_snapshots.push((entity, snapshot));
+        } else if result.fragments.len() > 1 {
+            let group_center = result
+                .fragments
+                .iter()
+                .map(|(_, tf)| tf.translation)
+                .sum::<Vec3>()
+                / result.fragments.len() as f32;
+
+            let group_entity = world
+                .spawn((
+                    Name::new("Brush Group"),
+                    BrushGroup,
+                    Transform::from_translation(group_center),
+                    Visibility::default(),
+                ))
+                .id();
+
+            for (brush, transform) in &result.fragments {
+                world.spawn((
+                    Name::new("Brush"),
+                    brush.clone(),
+                    Transform::from_translation(transform.translation - group_center),
+                    Visibility::default(),
+                    ChildOf(group_entity),
+                ));
+            }
+
+            let snapshot = snapshot_entity(world, group_entity);
+            result_snapshots.push((group_entity, snapshot));
         }
     }
 
     // Push undo command
     let cmd = SubtractBrushCommand {
         originals: original_snapshots,
-        fragments: fragment_snapshots,
+        fragments: result_snapshots,
     };
     let mut history = world.resource_mut::<CommandHistory>();
     history.undo_stack.push(Box::new(cmd));

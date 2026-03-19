@@ -108,8 +108,19 @@ pub fn regenerate_brush_meshes(
     mesh3d_query: Query<(), With<Mesh3d>>,
     mut meshes: ResMut<Assets<Mesh>>,
     palette: Res<BrushMaterialPalette>,
+    parents: Query<&ChildOf>,
+    selected_query: Query<(), With<Selected>>,
+    group_edit: Res<crate::viewport_select::GroupEditState>,
 ) {
     for (entity, brush, children, preview, is_selected) in &changed_brushes {
+        let in_active_group = group_edit
+            .active_group
+            .is_some_and(|group| parents.get(entity).is_ok_and(|c| c.0 == group));
+        let parent_selected = !in_active_group
+            && parents
+                .get(entity)
+                .is_ok_and(|child_of| selected_query.contains(child_of.0));
+        let effectively_selected = is_selected || parent_selected;
         // Despawn all Mesh3d children from previous regen cycles.
         if let Some(children) = children {
             for child in children.iter() {
@@ -174,7 +185,7 @@ pub fn regenerate_brush_meshes(
                 face_data.material.clone()
             } else if preview.is_some() {
                 palette.default_preview_material.clone()
-            } else if is_selected {
+            } else if effectively_selected {
                 palette.default_selected_material.clone()
             } else {
                 palette.default_material.clone()
@@ -245,11 +256,22 @@ pub(super) fn ensure_brush_face_materials(
     brushes: Query<(Entity, &BrushMeshCache, Has<BrushPreview>, Has<Selected>), With<super::Brush>>,
     brush_data: Query<&super::Brush>,
     mut face_mats: Query<(&BrushFaceEntity, &mut MeshMaterial3d<StandardMaterial>)>,
+    parents: Query<&ChildOf>,
+    selected_query: Query<(), With<Selected>>,
+    group_edit: Res<crate::viewport_select::GroupEditState>,
 ) {
     for (entity, cache, has_preview, is_selected) in &brushes {
+        let in_active_group = group_edit
+            .active_group
+            .is_some_and(|group| parents.get(entity).is_ok_and(|c| c.0 == group));
+        let parent_selected = !in_active_group
+            && parents
+                .get(entity)
+                .is_ok_and(|child_of| selected_query.contains(child_of.0));
+        let effectively_selected = is_selected || parent_selected;
         let target = if has_preview {
             &palette.default_preview_material
-        } else if is_selected {
+        } else if effectively_selected {
             &palette.default_selected_material
         } else {
             &palette.default_material

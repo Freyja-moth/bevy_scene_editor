@@ -7,8 +7,8 @@ use bevy::prelude::*;
 
 // Re-export core types for consumer convenience
 pub use types::{
-    Brush, BrushFaceData, BrushPlane, CustomProperties, GltfSource, JsnPrefab, JsnPrefabBaseline,
-    NavmeshRegion, PropertyValue, Terrain,
+    Brush, BrushFaceData, BrushGroup, BrushPlane, CustomProperties, GltfSource, JsnPrefab,
+    JsnPrefabBaseline, NavmeshRegion, PropertyValue, Terrain,
 };
 
 // Re-export geometry crate
@@ -35,6 +35,7 @@ impl Default for JsnPlugin {
 impl Plugin for JsnPlugin {
     fn build(&self, app: &mut App) {
         app.register_type::<Brush>()
+            .register_type::<BrushGroup>()
             .register_type::<BrushFaceData>()
             .register_type::<BrushPlane>()
             .register_type::<CustomProperties>()

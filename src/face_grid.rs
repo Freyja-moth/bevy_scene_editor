@@ -1,5 +1,3 @@
-use std::collections::HashSet;
-
 use bevy::color::palettes::tailwind;
 use bevy::prelude::*;
 
@@ -8,6 +6,7 @@ use crate::draw_brush::{CutPreviewFace, CutPreviewHidden, CutResultPreviewMesh};
 use crate::selection::Selected;
 use crate::snapping::SnapSettings;
 use crate::viewport_overlays::OverlaySettings;
+use crate::viewport_select::GroupEditState;
 
 /// Custom gizmo group for face grid / wireframe overlays, rendered with a depth
 /// bias so lines sit in front of the brush geometry rather than z-fighting.
@@ -46,9 +45,12 @@ fn draw_brush_edges(
     settings: Res<OverlaySettings>,
     edit_mode: Res<EditMode>,
     brushes: Query<
-        (&Brush, &BrushMeshCache, &GlobalTransform, Has<Selected>, &InheritedVisibility),
+        (Entity, &Brush, &BrushMeshCache, &GlobalTransform, Has<Selected>, &InheritedVisibility),
         Without<CutPreviewHidden>,
     >,
+    parents: Query<&ChildOf>,
+    selected_query: Query<(), With<Selected>>,
+    group_edit: Res<GroupEditState>,
 ) {
     if !settings.show_brush_wireframe {
         return;
@@ -56,7 +58,7 @@ fn draw_brush_edges(
 
     let in_clip_mode = matches!(*edit_mode, EditMode::BrushEdit(BrushEditMode::Clip));
 
-    for (brush, cache, global_tf, is_selected, inherited_vis) in &brushes {
+    for (entity, brush, cache, global_tf, is_selected, inherited_vis) in &brushes {
         if !inherited_vis.get() {
             continue;
         }
@@ -70,23 +72,38 @@ fn draw_brush_edges(
             }
         }
 
+        let parent_selected = parents
+            .get(entity)
+            .is_ok_and(|child_of| selected_query.contains(child_of.0));
+        let in_active_group = group_edit
+            .active_group
+            .is_some_and(|group| parents.get(entity).is_ok_and(|c| c.0 == group));
+
         let color: Color = if is_selected {
+            tailwind::CYAN_400.into()
+        } else if in_active_group {
+            // Inside group edit mode but not directly selected: dimmed cyan
+            Color::from(tailwind::CYAN_400).with_alpha(0.35)
+        } else if parent_selected {
             tailwind::CYAN_400.into()
         } else {
             Color::from(tailwind::GRAY_500).with_alpha(0.5)
         };
 
-        let mut drawn_edges = HashSet::new();
-        for polygon in &cache.face_polygons {
+        let rotation = global_tf.compute_transform().rotation;
+
+        for (face_idx, polygon) in cache.face_polygons.iter().enumerate() {
+            let world_normal = rotation
+                .mul_vec3(brush.faces[face_idx].plane.normal)
+                .normalize();
+            let offset = world_normal * 0.002;
+
             for i in 0..polygon.len() {
                 let a = polygon[i];
                 let b = polygon[(i + 1) % polygon.len()];
-                let edge = (a.min(b), a.max(b));
-                if drawn_edges.insert(edge) {
-                    let wa = global_tf.transform_point(cache.vertices[a]);
-                    let wb = global_tf.transform_point(cache.vertices[b]);
-                    gizmos.line(wa, wb, color);
-                }
+                let wa = global_tf.transform_point(cache.vertices[a]) + offset;
+                let wb = global_tf.transform_point(cache.vertices[b]) + offset;
+                gizmos.line(wa, wb, color);
             }
         }
     }
@@ -99,6 +116,7 @@ fn draw_face_grids(
     snap: Res<SnapSettings>,
     brushes: Query<
         (
+            Entity,
             &Brush,
             &BrushMeshCache,
             &GlobalTransform,
@@ -107,6 +125,9 @@ fn draw_face_grids(
         ),
         Without<CutPreviewHidden>,
     >,
+    parents: Query<&ChildOf>,
+    selected_query: Query<(), With<Selected>>,
+    group_edit: Res<GroupEditState>,
 ) {
     if !settings.show_face_grid {
         return;
@@ -114,11 +135,19 @@ fn draw_face_grids(
 
     let grid_size = snap.grid_size();
 
-    for (brush, cache, global_tf, is_selected, inherited_vis) in &brushes {
+    for (entity, brush, cache, global_tf, is_selected, inherited_vis) in &brushes {
         if !inherited_vis.get() {
             continue;
         }
-        let color = if is_selected {
+        let in_active_group = group_edit
+            .active_group
+            .is_some_and(|group| parents.get(entity).is_ok_and(|c| c.0 == group));
+        let parent_selected = !in_active_group
+            && parents
+                .get(entity)
+                .is_ok_and(|child_of| selected_query.contains(child_of.0));
+        let effectively_selected = is_selected || parent_selected;
+        let color = if effectively_selected {
             Color::from(tailwind::GRAY_600).with_alpha(0.5)
         } else {
             Color::from(tailwind::GRAY_600).with_alpha(0.25)
