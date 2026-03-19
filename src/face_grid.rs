@@ -1,3 +1,5 @@
+use std::collections::HashSet;
+
 use bevy::color::palettes::tailwind;
 use bevy::prelude::*;
 
@@ -8,16 +10,21 @@ use crate::snapping::SnapSettings;
 use crate::viewport_overlays::OverlaySettings;
 use crate::viewport_select::GroupEditState;
 
-/// Custom gizmo group for face grid / wireframe overlays, rendered with a depth
-/// bias so lines sit in front of the brush geometry rather than z-fighting.
+/// Gizmo group for face grid lines — rendered slightly in front of geometry.
 #[derive(Default, Reflect, GizmoConfigGroup)]
 pub struct FaceGridGizmoGroup;
+
+/// Gizmo group for brush edge wireframes — rendered in front of both geometry
+/// and face grid lines to ensure edges are always clearly visible.
+#[derive(Default, Reflect, GizmoConfigGroup)]
+pub struct BrushEdgeGizmoGroup;
 
 pub struct FaceGridPlugin;
 
 impl Plugin for FaceGridPlugin {
     fn build(&self, app: &mut App) {
         app.init_gizmo_group::<FaceGridGizmoGroup>()
+            .init_gizmo_group::<BrushEdgeGizmoGroup>()
             .add_systems(Startup, configure_face_grid_gizmos)
             .add_systems(
                 PostUpdate,
@@ -36,12 +43,15 @@ impl Plugin for FaceGridPlugin {
 
 fn configure_face_grid_gizmos(mut config_store: ResMut<GizmoConfigStore>) {
     let (config, _) = config_store.config_mut::<FaceGridGizmoGroup>();
-    config.depth_bias = -0.0001;
+    config.depth_bias = -0.5;
+
+    let (config, _) = config_store.config_mut::<BrushEdgeGizmoGroup>();
+    config.depth_bias = -1.0;
 }
 
 /// Draw wireframe edges on all brushes (bright cyan on selected, subtle grey on unselected).
 fn draw_brush_edges(
-    mut gizmos: Gizmos<FaceGridGizmoGroup>,
+    mut gizmos: Gizmos<BrushEdgeGizmoGroup>,
     settings: Res<OverlaySettings>,
     edit_mode: Res<EditMode>,
     brushes: Query<
@@ -90,20 +100,17 @@ fn draw_brush_edges(
             Color::from(tailwind::GRAY_500).with_alpha(0.5)
         };
 
-        let rotation = global_tf.compute_transform().rotation;
-
-        for (face_idx, polygon) in cache.face_polygons.iter().enumerate() {
-            let world_normal = rotation
-                .mul_vec3(brush.faces[face_idx].plane.normal)
-                .normalize();
-            let offset = world_normal * 0.002;
-
+        let mut drawn_edges = HashSet::new();
+        for polygon in &cache.face_polygons {
             for i in 0..polygon.len() {
                 let a = polygon[i];
                 let b = polygon[(i + 1) % polygon.len()];
-                let wa = global_tf.transform_point(cache.vertices[a]) + offset;
-                let wb = global_tf.transform_point(cache.vertices[b]) + offset;
-                gizmos.line(wa, wb, color);
+                let edge = (a.min(b), a.max(b));
+                if drawn_edges.insert(edge) {
+                    let wa = global_tf.transform_point(cache.vertices[a]);
+                    let wb = global_tf.transform_point(cache.vertices[b]);
+                    gizmos.line(wa, wb, color);
+                }
             }
         }
     }
@@ -148,9 +155,9 @@ fn draw_face_grids(
                 .is_ok_and(|child_of| selected_query.contains(child_of.0));
         let effectively_selected = is_selected || parent_selected;
         let color = if effectively_selected {
-            Color::from(tailwind::GRAY_600).with_alpha(0.5)
+            Color::from(tailwind::GRAY_600).with_alpha(0.2)
         } else {
-            Color::from(tailwind::GRAY_600).with_alpha(0.25)
+            Color::from(tailwind::GRAY_600).with_alpha(0.1)
         };
         for (face_idx, face_data) in brush.faces.iter().enumerate() {
             if face_data.material == Handle::default() {
@@ -251,7 +258,7 @@ fn draw_face_grids(
 
 /// Draw wireframe edges on cut-preview fragment faces.
 fn draw_cut_preview_edges(
-    mut gizmos: Gizmos<FaceGridGizmoGroup>,
+    mut gizmos: Gizmos<BrushEdgeGizmoGroup>,
     settings: Res<OverlaySettings>,
     previews: Query<&CutPreviewFace, With<CutResultPreviewMesh>>,
 ) {
@@ -289,7 +296,7 @@ fn draw_cut_preview_grids(
     }
 
     let grid_size = snap.grid_size();
-    let color = Color::from(tailwind::GRAY_600).with_alpha(0.5);
+    let color = Color::from(tailwind::GRAY_600).with_alpha(0.2);
 
     for face in &previews {
         if face.is_default_material {
