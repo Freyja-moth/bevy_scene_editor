@@ -1,3 +1,4 @@
+use crate::colors;
 use crate::{
     EditorEntity,
     gizmos::GizmoDragState,
@@ -344,8 +345,8 @@ fn update_box_select_overlay(
                 border: UiRect::all(Val::Px(1.0)),
                 ..default()
             },
-            BackgroundColor(Color::srgba(0.3, 0.5, 1.0, 0.1)),
-            BorderColor::all(Color::srgba(0.3, 0.5, 1.0, 0.7)),
+            BackgroundColor(colors::SELECTION_MARQUEE_BG),
+            BorderColor::all(colors::SELECTION_MARQUEE_BORDER),
             GlobalZIndex(50),
             Pickable::IGNORE,
         );

@@ -7,6 +7,7 @@ use bevy::{
     ui::UiGlobalTransform,
 };
 
+use crate::colors;
 use crate::{
     EditorEntity,
     brush::{BrushFaceEntity, BrushMaterialPalette},
@@ -129,6 +130,7 @@ pub struct CutPreviewFace {
     pub world_vertices: Vec<Vec3>,
     pub world_normal: Vec3,
     pub is_default_material: bool,
+    pub is_cap: bool,
 }
 
 /// Marker for brush face entities hidden during cut preview.
@@ -707,8 +709,6 @@ fn draw_brush_cancel(
     }
 }
 
-const DRAW_COLOR: Color = Color::srgb(1.0, 0.6, 0.0);
-const CUT_COLOR: Color = Color::srgb(1.0, 0.2, 0.2);
 
 fn draw_brush_preview(
     draw_state: Res<DrawBrushState>,
@@ -721,8 +721,8 @@ fn draw_brush_preview(
     };
 
     let color = match active.mode {
-        DrawMode::Add => DRAW_COLOR,
-        DrawMode::Cut => CUT_COLOR,
+        DrawMode::Add => colors::DRAW_MODE,
+        DrawMode::Cut => colors::CUT_MODE,
     };
 
     // Highlight the append target brush so the user knows they're in hull mode
@@ -733,7 +733,7 @@ fn draw_brush_preview(
                 for i in 0..polygon.len() {
                     let a = brush_tf.transform_point(verts[polygon[i]]);
                     let b = brush_tf.transform_point(verts[polygon[(i + 1) % polygon.len()]]);
-                    gizmos.line(a, b, DRAW_COLOR);
+                    gizmos.line(a, b, colors::DRAW_MODE);
                 }
             }
         }
@@ -1111,6 +1111,7 @@ fn append_to_brush(active: &ActiveDraw, commands: &mut Commands) {
                     uv_rotation: old_face.uv_rotation,
                     uv_u_axis: old_face.uv_u_axis,
                     uv_v_axis: old_face.uv_v_axis,
+                    ..default()
                 }
             } else {
                 // New face from the appended shape — use last-used material
@@ -1196,7 +1197,7 @@ fn draw_plane_grid(
             if alpha <= 0.0 {
                 continue;
             }
-            let grid_color = Color::srgba(0.5, 0.5, 0.5, alpha);
+            let grid_color = colors::DRAW_PLANE_GRID.with_alpha(alpha);
 
             gizmos.line(
                 pt - plane.axis_u * cross_size,
@@ -1533,7 +1534,7 @@ fn manage_draw_preview_mesh(
     let material = match active.mode {
         DrawMode::Add => cached_add_material.get_or_insert_with(|| {
             materials.add(StandardMaterial {
-                base_color: Color::srgba(1.0, 0.6, 0.0, 0.25),
+                base_color: colors::DRAW_PREVIEW_MESH,
                 alpha_mode: AlphaMode::Blend,
                 unlit: true,
                 cull_mode: None,
@@ -1542,7 +1543,7 @@ fn manage_draw_preview_mesh(
         }),
         DrawMode::Cut => cached_cut_material.get_or_insert_with(|| {
             materials.add(StandardMaterial {
-                base_color: Color::srgba(1.0, 0.2, 0.2, 0.15),
+                base_color: colors::CUT_PREVIEW_MESH,
                 alpha_mode: AlphaMode::Blend,
                 unlit: true,
                 cull_mode: None,
@@ -1681,6 +1682,7 @@ fn manage_draw_preview_mesh(
                             world_vertices: face_world_verts,
                             world_normal: face_data.plane.normal,
                             is_default_material: face_data.material == Handle::default(),
+                            is_cap: face_data.is_cap,
                         },
                         NotShadowCaster,
                         NotShadowReceiver,
@@ -2233,6 +2235,7 @@ pub fn join_selected_brushes_impl(world: &mut World) {
                     uv_rotation: old_face.uv_rotation,
                     uv_u_axis: old_face.uv_u_axis,
                     uv_v_axis: old_face.uv_v_axis,
+                    ..default()
                 }
             } else {
                 let (u, v) = compute_face_tangent_axes(hull_face.normal);

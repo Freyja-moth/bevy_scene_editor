@@ -12,8 +12,10 @@ use jackdaw_feathers::{
     tokens,
 };
 
+use crate::colors;
+
 use super::{
-    AXIS_X_COLOR, AXIS_Y_COLOR, AXIS_Z_COLOR, CustomPropertyAddRow, CustomPropertyBinding,
+    CustomPropertyAddRow, CustomPropertyBinding,
     CustomPropertyNameInput, CustomPropertyTypeSelector, rebuild_inspector,
 };
 
@@ -128,7 +130,7 @@ pub(super) fn spawn_custom_properties_display(
                     row,
                     "X",
                     v.x as f64,
-                    AXIS_X_COLOR,
+                    colors::INSPECTOR_AXIS_X,
                     source_entity,
                     n_x,
                     |new_f, old| {
@@ -142,7 +144,7 @@ pub(super) fn spawn_custom_properties_display(
                     row,
                     "Y",
                     v.y as f64,
-                    AXIS_Y_COLOR,
+                    colors::INSPECTOR_AXIS_Y,
                     source_entity,
                     n_y,
                     |new_f, old| {
@@ -162,7 +164,7 @@ pub(super) fn spawn_custom_properties_display(
                     row,
                     "X",
                     v.x as f64,
-                    AXIS_X_COLOR,
+                    colors::INSPECTOR_AXIS_X,
                     source_entity,
                     n_x,
                     |new_f, old| {
@@ -176,7 +178,7 @@ pub(super) fn spawn_custom_properties_display(
                     row,
                     "Y",
                     v.y as f64,
-                    AXIS_Y_COLOR,
+                    colors::INSPECTOR_AXIS_Y,
                     source_entity,
                     n_y,
                     |new_f, old| {
@@ -190,7 +192,7 @@ pub(super) fn spawn_custom_properties_display(
                     row,
                     "Z",
                     v.z as f64,
-                    AXIS_Z_COLOR,
+                    colors::INSPECTOR_AXIS_Z,
                     source_entity,
                     n_z,
                     |new_f, old| {

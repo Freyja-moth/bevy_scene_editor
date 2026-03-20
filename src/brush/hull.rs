@@ -213,6 +213,7 @@ pub(super) fn rebuild_brush_from_vertices(
             uv_rotation: old_face.uv_rotation,
             uv_u_axis: u_axis,
             uv_v_axis: v_axis,
+            ..default()
         });
     }
 

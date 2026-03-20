@@ -2,6 +2,7 @@ pub mod alignment_guides;
 pub mod asset_browser;
 pub mod asset_catalog;
 pub mod brush;
+pub mod colors;
 pub mod commands;
 pub mod custom_properties;
 pub mod draw_brush;

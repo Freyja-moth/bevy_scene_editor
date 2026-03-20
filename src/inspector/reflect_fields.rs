@@ -22,7 +22,9 @@ use jackdaw_feathers::{
     tokens,
 };
 
-use super::{AXIS_X_COLOR, AXIS_Y_COLOR, AXIS_Z_COLOR, FieldBinding, MAX_REFLECT_DEPTH};
+use crate::colors;
+
+use super::{FieldBinding, MAX_REFLECT_DEPTH};
 
 pub(crate) fn spawn_reflected_fields(
     commands: &mut Commands,
@@ -823,7 +825,7 @@ fn spawn_vec3_row(
         row,
         "X",
         vec3.x as f64,
-        AXIS_X_COLOR,
+        colors::INSPECTOR_AXIS_X,
         format!("{field_path}.x"),
         source_entity,
         component_type_id,
@@ -833,7 +835,7 @@ fn spawn_vec3_row(
         row,
         "Y",
         vec3.y as f64,
-        AXIS_Y_COLOR,
+        colors::INSPECTOR_AXIS_Y,
         format!("{field_path}.y"),
         source_entity,
         component_type_id,
@@ -843,7 +845,7 @@ fn spawn_vec3_row(
         row,
         "Z",
         vec3.z as f64,
-        AXIS_Z_COLOR,
+        colors::INSPECTOR_AXIS_Z,
         format!("{field_path}.z"),
         source_entity,
         component_type_id,
@@ -895,7 +897,7 @@ fn spawn_vec2_row(
         row,
         "X",
         vec2.x as f64,
-        AXIS_X_COLOR,
+        colors::INSPECTOR_AXIS_X,
         format!("{field_path}.x"),
         source_entity,
         component_type_id,
@@ -905,7 +907,7 @@ fn spawn_vec2_row(
         row,
         "Y",
         vec2.y as f64,
-        AXIS_Y_COLOR,
+        colors::INSPECTOR_AXIS_Y,
         format!("{field_path}.y"),
         source_entity,
         component_type_id,

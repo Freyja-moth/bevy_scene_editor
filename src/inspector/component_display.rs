@@ -1,4 +1,5 @@
 use crate::EditorEntity;
+use crate::colors;
 use crate::custom_properties::CustomProperties;
 use crate::selection::{Selected, Selection};
 use std::any::TypeId;
@@ -676,7 +677,7 @@ pub(crate) fn spawn_component_display(
 
     // Component name (orange if overridden)
     let name_color = if is_overridden {
-        Color::srgb(1.0, 0.6, 0.3)
+        colors::INSPECTOR_OVERRIDE
     } else {
         tokens::TEXT_DISPLAY_COLOR.into()
     };
@@ -711,7 +712,7 @@ pub(crate) fn spawn_component_display(
                     font_size: tokens::FONT_SM,
                     ..Default::default()
                 },
-                TextColor(Color::srgb(1.0, 0.6, 0.3)),
+                TextColor(colors::INSPECTOR_OVERRIDE),
                 ChildOf(header),
                 bevy::ui_widgets::observe(move |_: On<Pointer<Click>>, mut commands: Commands| {
                     commands.queue(move |world: &mut World| {

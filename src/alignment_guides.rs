@@ -1,6 +1,7 @@
 use bevy::prelude::*;
 
 use crate::brush::BrushMeshCache;
+use crate::colors;
 use crate::gizmos::{GizmoDragState, GizmoMode};
 use crate::modal_transform::{ModalOp, ModalTransformState, ViewportDragState};
 use crate::selection::Selected;
@@ -8,10 +9,8 @@ use crate::viewport_overlays::{self, OverlaySettings};
 
 const SPIKE_LENGTH_SCALE: f32 = 0.8;
 const SPIKE_LENGTH_MIN: f32 = 10.0;
-const SPIKE_COLOR: Color = Color::srgba(1.0, 1.0, 0.0, 0.5);
 const ALIGN_THRESHOLD_FACTOR: f32 = 0.005;
 const SNAP_THRESHOLD_FACTOR: f32 = 0.003;
-const ALIGN_COLOR: Color = Color::srgba(0.0, 1.0, 1.0, 0.6);
 const OVERLAP_FRACTION: f32 = 0.25;
 
 pub struct AlignmentGuidesPlugin;
@@ -227,7 +226,7 @@ fn draw_alignment_guides(
     for axis in &axes {
         for sign in [-1.0f32, 1.0] {
             let end = d_center + *axis * sign * spike_length;
-            gizmos.line(d_center, end, SPIKE_COLOR);
+            gizmos.line(d_center, end, colors::ALIGNMENT_SPIKE);
         }
     }
 
@@ -290,7 +289,7 @@ fn draw_alignment_guides(
                         d_max,
                         ref_aabb.min,
                         ref_aabb.max,
-                        ALIGN_COLOR,
+                        colors::ALIGNMENT_GUIDE,
                     );
 
                     // Track closest snap per axis

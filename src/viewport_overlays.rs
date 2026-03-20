@@ -5,7 +5,9 @@ use avian3d::parry::transformation::convex_hull;
 use bevy::prelude::*;
 
 use crate::brush::{self, BrushMeshCache};
+use crate::colors;
 use crate::selection::Selected;
+use jackdaw_jsn::BrushGroup;
 
 pub struct ViewportOverlaysPlugin;
 
@@ -81,15 +83,21 @@ fn draw_selection_bounding_boxes(
     children_query: Query<&Children>,
     mesh_query: Query<(&Mesh3d, &GlobalTransform)>,
     meshes: Res<Assets<Mesh>>,
+    parents: Query<&ChildOf>,
+    brush_groups: Query<(), With<BrushGroup>>,
 ) {
     if !settings.show_bounding_boxes {
         return;
     }
 
-    let color = Color::srgba(1.0, 1.0, 0.0, 0.8);
+    let color = colors::SELECTION_BBOX;
 
     for (entity, global_tf, maybe_brush_cache, inherited_vis) in &selected {
         if !inherited_vis.get() {
+            continue;
+        }
+        // Skip children of BrushGroups (the group itself gets a bounding box)
+        if parents.get(entity).is_ok_and(|c| brush_groups.contains(c.0)) {
             continue;
         }
         // Collect world-space vertices
@@ -257,7 +265,7 @@ fn draw_point_light_gizmo(
     if !settings.show_bounding_boxes {
         return;
     }
-    let color = Color::srgba(1.0, 1.0, 0.0, 0.8);
+    let color = colors::SELECTION_BBOX;
     for (light, tf, inherited_vis) in &query {
         if !inherited_vis.get() {
             continue;
@@ -286,7 +294,7 @@ fn draw_spot_light_gizmo(
     if !settings.show_bounding_boxes {
         return;
     }
-    let color = Color::srgba(1.0, 1.0, 0.0, 0.8);
+    let color = colors::SELECTION_BBOX;
     for (light, tf, inherited_vis) in &query {
         if !inherited_vis.get() {
             continue;
@@ -320,7 +328,7 @@ fn draw_dir_light_gizmo(
     if !settings.show_bounding_boxes {
         return;
     }
-    let color = Color::srgba(1.0, 1.0, 0.0, 0.8);
+    let color = colors::SELECTION_BBOX;
     for (tf, inherited_vis) in &query {
         if !inherited_vis.get() {
             continue;
@@ -340,7 +348,7 @@ fn draw_camera_gizmo(
     if !settings.show_bounding_boxes {
         return;
     }
-    let color = Color::srgba(1.0, 1.0, 0.0, 0.8);
+    let color = colors::SELECTION_BBOX;
     for (projection, tf, inherited_vis) in &query {
         if !inherited_vis.get() {
             continue;
@@ -400,17 +408,17 @@ fn draw_coordinate_indicator(
     gizmos.line(
         indicator_pos,
         indicator_pos + Vec3::X * size,
-        Color::srgb(1.0, 0.2, 0.2),
+        colors::AXIS_X,
     );
     gizmos.line(
         indicator_pos,
         indicator_pos + Vec3::Y * size,
-        Color::srgb(0.2, 1.0, 0.2),
+        colors::AXIS_Y,
     );
     gizmos.line(
         indicator_pos,
         indicator_pos + Vec3::Z * size,
-        Color::srgb(0.2, 0.4, 1.0),
+        colors::AXIS_Z,
     );
 }
 
@@ -419,7 +427,7 @@ fn draw_navmesh_region_bounds(
     mut gizmos: Gizmos,
     regions: Query<&GlobalTransform, With<jackdaw_jsn::NavmeshRegion>>,
 ) {
-    let color = Color::srgba(0.2, 0.8, 0.4, 0.6);
+    let color = colors::NAVMESH_REGION_BOUNDS;
     for global_tf in &regions {
         let transform = global_tf.compute_transform();
         gizmos.cube(transform, color);

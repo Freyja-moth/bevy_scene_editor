@@ -263,10 +263,6 @@ pub(super) struct CustomPropertyTypeSelector;
 #[derive(Component)]
 pub(super) struct CustomPropertyNameInput;
 
-// --- Axis colors for Vec3/Vec2 fields ---
-pub(super) const AXIS_X_COLOR: Color = Color::srgb(0.8, 0.3, 0.3);
-pub(super) const AXIS_Y_COLOR: Color = Color::srgb(0.3, 0.7, 0.3);
-pub(super) const AXIS_Z_COLOR: Color = Color::srgb(0.3, 0.5, 0.8);
 
 /// Stores the entity currently being inspected.
 #[derive(Component)]

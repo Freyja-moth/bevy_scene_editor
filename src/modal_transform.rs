@@ -6,6 +6,7 @@ use bevy::{
     window::{CursorGrabMode, CursorOptions},
 };
 
+use crate::colors;
 use crate::{
     commands::{CommandHistory, SetTransform},
     gizmos::{GizmoAxis, GizmoDragState, GizmoHoverState, GizmoMode},
@@ -776,8 +777,8 @@ fn axis_to_vec3(axis: GizmoAxis) -> Vec3 {
 #[allow(dead_code)]
 fn axis_color(axis: GizmoAxis) -> Color {
     match axis {
-        GizmoAxis::X => Color::srgb(1.0, 0.2, 0.2),
-        GizmoAxis::Y => Color::srgb(0.2, 1.0, 0.2),
-        GizmoAxis::Z => Color::srgb(0.2, 0.4, 1.0),
+        GizmoAxis::X => colors::AXIS_X,
+        GizmoAxis::Y => colors::AXIS_Y,
+        GizmoAxis::Z => colors::AXIS_Z,
     }
 }

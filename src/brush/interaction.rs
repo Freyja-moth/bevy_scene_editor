@@ -2,6 +2,7 @@ use std::collections::HashSet;
 
 use bevy::{ecs::system::SystemParam, input_focus::InputFocus, prelude::*};
 
+use crate::colors;
 use crate::{
     commands::{CommandHistory, snapshot_entity},
     draw_brush::CreateBrushCommand,
@@ -1865,7 +1866,7 @@ pub(super) fn handle_clip_mode(
     // Draw clip points and preview
     for (i, point) in clip_state.points.iter().enumerate() {
         let world_pos = brush_global.transform_point(*point);
-        let color = Color::srgb(1.0, 0.3, 0.3);
+        let color = colors::CLIP_POINT;
         gizmos.sphere(Isometry3d::from_translation(world_pos), 0.06, color);
         // Draw connecting lines between points
         if i > 0 {
@@ -1914,18 +1915,9 @@ pub(super) fn handle_clip_mode(
         back_faces.push(back_clip);
 
         let (front_color, back_color) = match clip_state.mode {
-            ClipMode::KeepFront => (
-                Color::srgba(0.3, 1.0, 0.5, 0.8),
-                Color::srgba(1.0, 0.2, 0.2, 0.4),
-            ),
-            ClipMode::KeepBack => (
-                Color::srgba(1.0, 0.2, 0.2, 0.4),
-                Color::srgba(0.3, 1.0, 0.5, 0.8),
-            ),
-            ClipMode::Split => (
-                Color::srgba(0.3, 1.0, 0.5, 0.8),
-                Color::srgba(0.3, 0.5, 1.0, 0.8),
-            ),
+            ClipMode::KeepFront => (colors::CLIP_KEEP, colors::CLIP_DISCARD),
+            ClipMode::KeepBack => (colors::CLIP_DISCARD, colors::CLIP_KEEP),
+            ClipMode::Split => (colors::CLIP_KEEP, colors::CLIP_SPLIT_BACK),
         };
 
         // Draw front half wireframe
@@ -1957,7 +1949,7 @@ pub(super) fn handle_clip_mode(
             ClipMode::KeepBack => -world_normal,
             _ => world_normal,
         };
-        gizmos.arrow(center, center + arrow_dir * 0.5, Color::srgb(1.0, 0.3, 0.3));
+        gizmos.arrow(center, center + arrow_dir * 0.5, colors::CLIP_NORMAL_ARROW);
     }
 }
 

@@ -4,6 +4,7 @@ use bevy::{
     window::{CursorGrabMode, CursorOptions},
 };
 
+use crate::colors;
 use crate::{
     commands::{CommandHistory, SetTransform},
     modal_transform::ModalTransformState,
@@ -18,12 +19,6 @@ const AXIS_TIP_LENGTH: f32 = 0.3;
 const ROTATE_RING_RADIUS: f32 = 1.2;
 const SCALE_CUBE_SIZE: f32 = 0.15;
 
-const COLOR_X: Color = Color::srgb(1.0, 0.2, 0.2);
-const COLOR_Y: Color = Color::srgb(0.2, 1.0, 0.2);
-const COLOR_Z: Color = Color::srgb(0.2, 0.4, 1.0);
-const COLOR_X_BRIGHT: Color = Color::srgb(1.0, 0.5, 0.5);
-const COLOR_Y_BRIGHT: Color = Color::srgb(0.5, 1.0, 0.5);
-const COLOR_Z_BRIGHT: Color = Color::srgb(0.5, 0.7, 1.0);
 const TRANSLATE_SENSITIVITY: f32 = 0.003;
 const ROTATE_SENSITIVITY: f32 = 0.01;
 const SCALE_SENSITIVITY: f32 = 0.005;
@@ -534,23 +529,23 @@ fn axis_color(axis: GizmoAxis, active: Option<GizmoAxis>) -> Color {
     match axis {
         GizmoAxis::X => {
             if is_active {
-                COLOR_X_BRIGHT
+                colors::AXIS_X_BRIGHT
             } else {
-                COLOR_X
+                colors::AXIS_X
             }
         }
         GizmoAxis::Y => {
             if is_active {
-                COLOR_Y_BRIGHT
+                colors::AXIS_Y_BRIGHT
             } else {
-                COLOR_Y
+                colors::AXIS_Y
             }
         }
         GizmoAxis::Z => {
             if is_active {
-                COLOR_Z_BRIGHT
+                colors::AXIS_Z_BRIGHT
             } else {
-                COLOR_Z
+                colors::AXIS_Z
             }
         }
     }

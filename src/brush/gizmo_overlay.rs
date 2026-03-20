@@ -4,11 +4,9 @@ use super::interaction::{
     BrushDragState, EdgeDragState, FaceExtrudeMode, VertexDragConstraint, VertexDragState,
 };
 use super::{BrushEditMode, BrushMeshCache, BrushSelection, EditMode};
+use crate::colors;
+use crate::face_grid::BrushEdgeGizmoGroup;
 use jackdaw_jsn::Brush;
-
-const EDIT_EDGE_COLOR: Color = Color::srgba(1.0, 0.8, 0.0, 1.0);
-const EDIT_VERTEX_COLOR: Color = Color::srgba(1.0, 1.0, 1.0, 1.0);
-const SELECTED_VERTEX_COLOR: Color = Color::srgba(0.0, 1.0, 0.5, 1.0);
 
 pub(super) fn draw_brush_edit_gizmos(
     edit_mode: Res<EditMode>,
@@ -20,7 +18,7 @@ pub(super) fn draw_brush_edit_gizmos(
     edge_drag: Res<EdgeDragState>,
     face_drag: Res<BrushDragState>,
     hover: Res<super::BrushFaceHover>,
-    mut gizmos: Gizmos,
+    mut gizmos: Gizmos<BrushEdgeGizmoGroup>,
 ) {
     // Draw hover face outline (works in both Object and Edit modes)
     if let (Some(hover_entity), Some(hover_face)) = (hover.entity, hover.face_index) {
@@ -33,12 +31,8 @@ pub(super) fn draw_brush_edit_gizmos(
                         && brush_selection.entity == Some(hover_entity);
                     if !is_selected {
                         let color = match hover.intent {
-                            super::HoverIntent::PushPull => {
-                                Color::srgba(1.0, 0.8, 0.0, 0.9) // yellow
-                            }
-                            super::HoverIntent::Extend => {
-                                Color::srgba(1.0, 0.5, 0.0, 0.9) // orange
-                            }
+                            super::HoverIntent::PushPull => colors::HOVER_FACE_PUSH_PULL,
+                            super::HoverIntent::Extend => colors::HOVER_FACE_EXTEND,
                         };
                         for i in 0..polygon.len() {
                             let a =
@@ -101,9 +95,9 @@ pub(super) fn draw_brush_edit_gizmos(
             let wa = brush_global.transform_point(cache.vertices[a]);
             let wb = brush_global.transform_point(cache.vertices[b]);
             let color = if selected {
-                SELECTED_VERTEX_COLOR
+                colors::EDIT_VERTEX_SELECTED
             } else {
-                EDIT_EDGE_COLOR
+                colors::EDIT_EDGE
             };
             gizmos.line(wa, wb, color);
         }
@@ -112,9 +106,9 @@ pub(super) fn draw_brush_edit_gizmos(
         for (vi, v) in cache.vertices.iter().enumerate() {
             let world_pos = brush_global.transform_point(*v);
             let color = if brush_selection.vertices.contains(&vi) {
-                SELECTED_VERTEX_COLOR
+                colors::EDIT_VERTEX_SELECTED
             } else {
-                EDIT_VERTEX_COLOR
+                colors::EDIT_VERTEX
             };
             gizmos.sphere(Isometry3d::from_translation(world_pos), 0.04, color);
         }
@@ -133,7 +127,7 @@ pub(super) fn draw_brush_edit_gizmos(
                     let a = brush_global.transform_point(cache.vertices[polygon[i]]);
                     let b = brush_global
                         .transform_point(cache.vertices[polygon[(i + 1) % polygon.len()]]);
-                    gizmos.line(a, b, SELECTED_VERTEX_COLOR);
+                    gizmos.line(a, b, colors::EDIT_VERTEX_SELECTED);
                 }
                 // Draw the face normal from centroid
                 let centroid: Vec3 = polygon.iter().map(|&vi| cache.vertices[vi]).sum::<Vec3>()
@@ -145,7 +139,7 @@ pub(super) fn draw_brush_edit_gizmos(
                 gizmos.arrow(
                     world_centroid,
                     world_centroid + world_normal * 0.5,
-                    Color::srgb(0.0, 1.0, 1.0),
+                    colors::FACE_NORMAL_ARROW,
                 );
             }
         }
@@ -157,7 +151,7 @@ pub(super) fn draw_brush_edit_gizmos(
         let depth = face_drag.extend_depth;
         let normal = face_drag.extend_face_normal;
         let offset = normal * depth;
-        let preview_color = Color::srgb(0.0, 1.0, 0.5);
+        let preview_color = colors::FACE_EXTRUDE_PREVIEW;
 
         if polygon.len() >= 3 {
             // Base polygon edges
@@ -190,9 +184,9 @@ pub(super) fn draw_brush_edit_gizmos(
     if let Some(constraint) = active_constraint {
         if constraint != VertexDragConstraint::Free {
             let (axis_dir, color) = match constraint {
-                VertexDragConstraint::AxisX => (Vec3::X, Color::srgb(1.0, 0.2, 0.2)),
-                VertexDragConstraint::AxisY => (Vec3::Y, Color::srgb(0.2, 1.0, 0.2)),
-                VertexDragConstraint::AxisZ => (Vec3::Z, Color::srgb(0.2, 0.4, 1.0)),
+                VertexDragConstraint::AxisX => (Vec3::X, colors::AXIS_X),
+                VertexDragConstraint::AxisY => (Vec3::Y, colors::AXIS_Y),
+                VertexDragConstraint::AxisZ => (Vec3::Z, colors::AXIS_Z),
                 VertexDragConstraint::Free => unreachable!(),
             };
             let (_, brush_rot, _) = brush_global.to_scale_rotation_translation();

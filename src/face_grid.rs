@@ -1,9 +1,11 @@
 use std::collections::HashSet;
 
-use bevy::color::palettes::tailwind;
 use bevy::prelude::*;
 
+use jackdaw_jsn::BrushGroup;
+
 use crate::brush::{Brush, BrushEditMode, BrushMeshCache, EditMode};
+use crate::colors;
 use crate::draw_brush::{CutPreviewFace, CutPreviewHidden, CutResultPreviewMesh};
 use crate::selection::Selected;
 use crate::snapping::SnapSettings;
@@ -61,6 +63,7 @@ fn draw_brush_edges(
     parents: Query<&ChildOf>,
     selected_query: Query<(), With<Selected>>,
     group_edit: Res<GroupEditState>,
+    brush_groups: Query<(), With<BrushGroup>>,
 ) {
     if !settings.show_brush_wireframe {
         return;
@@ -90,16 +93,39 @@ fn draw_brush_edges(
             .is_some_and(|group| parents.get(entity).is_ok_and(|c| c.0 == group));
 
         let color: Color = if is_selected {
-            tailwind::CYAN_400.into()
+            if in_clip_mode { colors::WIREFRAME_SELECTED_CLIP } else { colors::WIREFRAME_SELECTED }
         } else if in_active_group {
-            // Inside group edit mode but not directly selected: dimmed cyan
-            Color::from(tailwind::CYAN_400).with_alpha(0.35)
+            colors::WIREFRAME_GROUP_EDIT
         } else if parent_selected {
-            tailwind::CYAN_400.into()
+            if in_clip_mode { colors::WIREFRAME_SELECTED_CLIP } else { colors::WIREFRAME_SELECTED }
         } else {
-            Color::from(tailwind::GRAY_500).with_alpha(0.5)
+            colors::WIREFRAME_UNSELECTED
         };
 
+        // Determine if we should hide cap-only edges (internal cut boundaries)
+        let in_brush_group = parents
+            .get(entity)
+            .is_ok_and(|child_of| brush_groups.contains(child_of.0));
+        let hide_cap_edges = in_brush_group && !is_selected;
+
+        // Pre-collect non-cap edges (edges on at least one original face)
+        let non_cap_edges: Option<HashSet<(usize, usize)>> = if hide_cap_edges {
+            let mut set = HashSet::new();
+            for (fi, polygon) in cache.face_polygons.iter().enumerate() {
+                if !brush.faces.get(fi).is_some_and(|f| f.is_cap) {
+                    for i in 0..polygon.len() {
+                        let a = polygon[i];
+                        let b = polygon[(i + 1) % polygon.len()];
+                        set.insert((a.min(b), a.max(b)));
+                    }
+                }
+            }
+            Some(set)
+        } else {
+            None
+        };
+
+        // Draw edges
         let mut drawn_edges = HashSet::new();
         for polygon in &cache.face_polygons {
             for i in 0..polygon.len() {
@@ -107,6 +133,11 @@ fn draw_brush_edges(
                 let b = polygon[(i + 1) % polygon.len()];
                 let edge = (a.min(b), a.max(b));
                 if drawn_edges.insert(edge) {
+                    if let Some(ref nce) = non_cap_edges {
+                        if !nce.contains(&edge) {
+                            continue;
+                        }
+                    }
                     let wa = global_tf.transform_point(cache.vertices[a]);
                     let wb = global_tf.transform_point(cache.vertices[b]);
                     gizmos.line(wa, wb, color);
@@ -155,9 +186,9 @@ fn draw_face_grids(
                 .is_ok_and(|child_of| selected_query.contains(child_of.0));
         let effectively_selected = is_selected || parent_selected;
         let color = if effectively_selected {
-            Color::from(tailwind::GRAY_600).with_alpha(0.2)
+            colors::FACE_GRID_SELECTED
         } else {
-            Color::from(tailwind::GRAY_600).with_alpha(0.1)
+            colors::FACE_GRID_UNSELECTED
         };
         for (face_idx, face_data) in brush.faces.iter().enumerate() {
             if face_data.material == Handle::default() {
@@ -266,10 +297,10 @@ fn draw_cut_preview_edges(
         return;
     }
 
-    let color: Color = tailwind::CYAN_400.into();
+    let color: Color = colors::WIREFRAME_CUT_PREVIEW;
 
     for face in &previews {
-        if face.is_default_material {
+        if face.is_default_material || face.is_cap {
             continue;
         }
         let verts = &face.world_vertices;
@@ -296,10 +327,10 @@ fn draw_cut_preview_grids(
     }
 
     let grid_size = snap.grid_size();
-    let color = Color::from(tailwind::GRAY_600).with_alpha(0.2);
+    let color = colors::FACE_GRID_SELECTED;
 
     for face in &previews {
-        if face.is_default_material {
+        if face.is_default_material || face.is_cap {
             continue;
         }
         let world_verts = &face.world_vertices;
