@@ -60,16 +60,41 @@ pub struct SceneIoPlugin;
 impl Plugin for SceneIoPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<SceneFilePath>()
+            .init_resource::<SceneDirtyState>()
             .add_systems(
                 Update,
                 handle_scene_io_keys.in_set(crate::EditorInteraction),
             )
             .add_systems(
                 Update,
-                poll_scene_dialog.run_if(in_state(crate::AppState::Editor)),
-            );
+                (
+                    poll_scene_dialog,
+                    cleanup_pending_new_scene,
+                )
+                    .run_if(in_state(crate::AppState::Editor)),
+            )
+            .add_observer(on_new_scene_save)
+            .add_observer(on_new_scene_discard);
     }
 }
+
+/// Tracks whether the scene has unsaved changes by comparing the current
+/// undo stack length against the length at the time of last save/load/new.
+#[derive(Resource, Default)]
+pub struct SceneDirtyState {
+    pub undo_len_at_save: usize,
+}
+
+/// Returns `true` when the scene has unsaved changes.
+pub fn is_scene_dirty(world: &World) -> bool {
+    let history = world.resource::<jackdaw_commands::CommandHistory>();
+    let dirty_state = world.resource::<SceneDirtyState>();
+    history.undo_stack.len() != dirty_state.undo_len_at_save
+}
+
+/// Marker resource: a "save before new scene?" dialog is currently open.
+#[derive(Resource)]
+struct PendingNewScene;
 
 #[derive(Resource)]
 enum SceneDialogTask {
@@ -245,6 +270,10 @@ fn save_scene_inner(world: &mut World) {
     // Save metadata back
     let mut scene_path = world.resource_mut::<SceneFilePath>();
     scene_path.metadata = metadata;
+
+    // Mark scene as clean
+    let history_len = world.resource::<jackdaw_commands::CommandHistory>().undo_stack.len();
+    world.resource_mut::<SceneDirtyState>().undo_len_at_save = history_len;
 
     // Write to disk on the IO task pool
     let path_clone = path.clone();
@@ -1169,6 +1198,9 @@ fn finish_load_scene(world: &mut World, chosen: &std::path::Path) {
     }
 
     world.resource_mut::<SceneFilePath>().path = Some(path);
+
+    // Stacks were cleared by clear_scene_entities, so dirty baseline is 0
+    world.resource_mut::<SceneDirtyState>().undo_len_at_save = 0;
 }
 
 /// Deserialize inline assets from the generic assets table.
@@ -1410,11 +1442,87 @@ pub fn load_scene_from_jsn(
 }
 
 pub fn new_scene(world: &mut World) {
+    if is_scene_dirty(world) {
+        world.insert_resource(PendingNewScene);
+        world.commands().trigger(
+            jackdaw_feathers::dialog::OpenDialogEvent::new("Unsaved Changes", "Save")
+                .with_secondary_action("Discard")
+                .with_description("You have unsaved changes. Save before creating a new scene?"),
+        );
+        world.flush();
+        return;
+    }
+    do_new_scene(world);
+}
+
+fn do_new_scene(world: &mut World) {
     clear_scene_entities(world);
     let mut scene_path = world.resource_mut::<SceneFilePath>();
     scene_path.path = None;
     scene_path.metadata = JsnMetadata::default();
+    world.resource_mut::<SceneDirtyState>().undo_len_at_save = 0;
+    spawn_default_lighting(world);
     info!("New scene created");
+}
+
+/// Spawn default lighting for a new/empty scene (Sun directional light + ambient).
+pub fn spawn_default_lighting(world: &mut World) {
+    world.insert_resource(bevy::light::GlobalAmbientLight {
+        color: Color::WHITE,
+        brightness: 400.0,
+        affects_lightmapped_meshes: true,
+    });
+
+    world.spawn((
+        Name::new("Sun"),
+        DirectionalLight {
+            shadows_enabled: true,
+            illuminance: 10000.0,
+            ..default()
+        },
+        Transform::from_xyz(10.0, 20.0, 10.0).with_rotation(Quat::from_euler(
+            EulerRot::XYZ,
+            -0.8,
+            0.4,
+            0.0,
+        )),
+    ));
+}
+
+fn on_new_scene_save(
+    _event: On<jackdaw_feathers::dialog::DialogActionEvent>,
+    mut commands: Commands,
+) {
+    commands.queue(|world: &mut World| {
+        if world.remove_resource::<PendingNewScene>().is_none() {
+            return;
+        }
+        save_scene(world);
+        do_new_scene(world);
+    });
+}
+
+fn on_new_scene_discard(
+    _event: On<jackdaw_feathers::dialog::DialogSecondaryActionEvent>,
+    mut commands: Commands,
+) {
+    commands.queue(|world: &mut World| {
+        if world.remove_resource::<PendingNewScene>().is_none() {
+            return;
+        }
+        do_new_scene(world);
+    });
+}
+
+/// If `PendingNewScene` exists but no dialog is open, the user dismissed via Esc/Cancel.
+fn cleanup_pending_new_scene(
+    pending: Option<Res<PendingNewScene>>,
+    dialogs: Query<(), With<jackdaw_feathers::dialog::EditorDialog>>,
+    mut commands: Commands,
+) {
+    if pending.is_some() && dialogs.is_empty() {
+        commands.remove_resource::<PendingNewScene>();
+    }
 }
 
 // ─────────────────────────────────── Helpers ───────────────────────────────────
@@ -1470,7 +1578,7 @@ fn collect_editor_entities(world: &mut World) -> HashSet<Entity> {
 }
 
 /// Remove scene entities from the world (named non-editor entities + their descendants).
-fn clear_scene_entities(world: &mut World) {
+pub(crate) fn clear_scene_entities(world: &mut World) {
     // Clear selection first to prevent on_entity_deselected observer from
     // firing on stale/despawned tree row entities.
     world

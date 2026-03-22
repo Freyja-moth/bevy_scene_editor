@@ -7,7 +7,7 @@ use crate::{
     draw_brush::{DrawBrushState, DrawMode, DrawPhase},
     gizmos::{GizmoMode, GizmoSpace},
     modal_transform::{ModalConstraint, ModalOp, ModalTransformState},
-    scene_io::SceneFilePath,
+    scene_io::{SceneDirtyState, SceneFilePath},
     selection::{Selected, Selection},
     snapping::SnapSettings,
 };
@@ -114,6 +114,8 @@ fn update_status_right(
     vertex_drag: Res<VertexDragState>,
     clip_state: Res<ClipState>,
     draw_state: Res<DrawBrushState>,
+    scene_dirty: Res<SceneDirtyState>,
+    history: Res<jackdaw_commands::CommandHistory>,
     mut text_query: Query<&mut Text, With<StatusBarRight>>,
 ) {
     if !mode.is_changed()
@@ -124,6 +126,8 @@ fn update_status_right(
         && !vertex_drag.is_changed()
         && !clip_state.is_changed()
         && !draw_state.is_changed()
+        && !scene_dirty.is_changed()
+        && !history.is_changed()
     {
         return;
     }
@@ -265,11 +269,19 @@ fn update_status_right(
         }
     };
 
+    let dirty = history.undo_stack.len() != scene_dirty.undo_len_at_save;
+    let dirty_marker = if dirty { "*" } else { "" };
     let path_str = scene_path
         .path
         .as_deref()
-        .map(|p| format!(" | {p}"))
-        .unwrap_or_default();
+        .map(|p| format!(" | {dirty_marker}{p}"))
+        .unwrap_or_else(|| {
+            if dirty {
+                " | *Unsaved".to_string()
+            } else {
+                String::new()
+            }
+        });
 
     text.0 = format!("{mode_str} ({space_str}) | {snap_str}{path_str}");
 }

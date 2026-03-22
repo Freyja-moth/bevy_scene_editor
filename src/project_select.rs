@@ -5,7 +5,11 @@ use bevy::{
     tasks::{AsyncComputeTaskPool, Task, futures_lite::future},
     window::{PrimaryWindow, RawHandleWrapper},
 };
-use jackdaw_feathers::{icons::EditorFont, tokens};
+use jackdaw_feathers::{
+    button::{ButtonVariant, IconButtonProps, icon_button},
+    icons::{EditorFont, Icon},
+    tokens,
+};
 use rfd::AsyncFileDialog;
 
 use crate::{
@@ -29,13 +33,34 @@ impl Plugin for ProjectSelectPlugin {
 #[derive(Component)]
 struct ProjectSelectorRoot;
 
+/// When set, the project selector will skip UI and auto-open the given project.
+#[derive(Resource)]
+pub struct PendingAutoOpen {
+    pub path: PathBuf,
+}
+
 /// Resource holding the async folder picker task.
 #[derive(Resource)]
 struct FolderDialogTask(Task<Option<rfd::FileHandle>>);
 
-fn spawn_project_selector(mut commands: Commands, editor_font: Res<EditorFont>) {
+fn spawn_project_selector(
+    mut commands: Commands,
+    editor_font: Res<EditorFont>,
+    icon_font: Res<jackdaw_feathers::icons::IconFont>,
+    pending: Option<Res<PendingAutoOpen>>,
+) {
+    if let Some(pending) = pending {
+        let path = pending.path.clone();
+        commands.remove_resource::<PendingAutoOpen>();
+        commands.queue(move |world: &mut World| {
+            select_project(world, path);
+        });
+        return;
+    }
+
     let recent = project::read_recent_projects();
     let font = editor_font.0.clone();
+    let icon_font_handle = icon_font.0.clone();
 
     // Detect CWD project candidate
     let cwd = std::env::current_dir().unwrap_or_default();
@@ -109,6 +134,7 @@ fn spawn_project_selector(mut commands: Commands, editor_font: Res<EditorFont>) 
                             &cwd_name,
                             &cwd.to_string_lossy(),
                             font.clone(),
+                            icon_font_handle.clone(),
                             cwd_clone,
                             true,
                         );
@@ -140,6 +166,7 @@ fn spawn_project_selector(mut commands: Commands, editor_font: Res<EditorFont>) 
                                 &entry.name,
                                 &entry.path.to_string_lossy(),
                                 font.clone(),
+                                icon_font_handle.clone(),
                                 entry.path.clone(),
                                 false,
                             );
@@ -196,20 +223,35 @@ fn spawn_project_row(
     name: &str,
     path_display: &str,
     font: Handle<Font>,
+    icon_font: Handle<Font>,
     project_path: PathBuf,
     is_cwd: bool,
 ) {
+    // Outer row: info column on left, optional X button on right
     let row_entity = parent
         .spawn((
             Node {
-                flex_direction: FlexDirection::Column,
+                flex_direction: FlexDirection::Row,
                 width: Val::Percent(100.0),
                 padding: UiRect::all(Val::Px(10.0)),
                 border_radius: BorderRadius::all(Val::Px(tokens::BORDER_RADIUS_MD)),
-                row_gap: Val::Px(2.0),
+                align_items: AlignItems::Center,
                 ..Default::default()
             },
             BackgroundColor(tokens::TOOLBAR_BG),
+        ))
+        .id();
+
+    // Left side: info column (flex_grow so it fills space)
+    let info_column = parent
+        .commands()
+        .spawn((
+            Node {
+                flex_direction: FlexDirection::Column,
+                flex_grow: 1.0,
+                row_gap: Val::Px(2.0),
+                ..Default::default()
+            },
             children![
                 (
                     Node {
@@ -234,17 +276,44 @@ fn spawn_project_row(
                 (
                     Text::new(path_display.to_string()),
                     TextFont {
-                        font,
+                        font: font.clone(),
                         font_size: tokens::FONT_SM,
                         ..Default::default()
                     },
                     TextColor(tokens::TEXT_SECONDARY),
                 ),
             ],
+            Pickable::IGNORE,
         ))
         .id();
 
-    // Hover effects
+    parent.commands().entity(row_entity).add_child(info_column);
+
+    // Right side: X button (only for recent projects, not CWD)
+    if !is_cwd {
+        let remove_path = project_path.clone();
+        let x_button = parent
+            .commands()
+            .spawn(icon_button(
+                IconButtonProps::new(Icon::X).variant(ButtonVariant::Ghost),
+                &icon_font,
+            ))
+            .id();
+
+        // X button click: remove from recent + despawn row
+        parent.commands().entity(x_button).observe(
+            move |mut click: On<Pointer<Click>>, mut commands: Commands| {
+                click.propagate(false);
+                let path = remove_path.clone();
+                project::remove_recent(&path);
+                commands.entity(row_entity).try_despawn();
+            },
+        );
+
+        parent.commands().entity(row_entity).add_child(x_button);
+    }
+
+    // Hover effects on the row
     parent.commands().entity(row_entity).observe(
         |hover: On<Pointer<Over>>, mut bg: Query<&mut BackgroundColor>| {
             if let Ok(mut bg) = bg.get_mut(hover.event_target()) {

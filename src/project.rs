@@ -106,6 +106,13 @@ pub fn create_default_project(root: &Path) -> JsnProject {
     project
 }
 
+/// Remove a project from the recent projects list.
+pub fn remove_recent(path: &Path) {
+    let mut recent = read_recent_projects();
+    recent.projects.retain(|e| e.path != path);
+    save_recent_projects(&recent);
+}
+
 /// Record a project in the recent projects list.
 pub fn touch_recent(root: &Path, name: &str) {
     let mut recent = read_recent_projects();

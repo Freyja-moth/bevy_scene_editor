@@ -16,6 +16,7 @@ pub fn plugin(app: &mut App) {
     app.add_observer(on_open_dialog)
         .add_observer(on_open_confirmation_dialog)
         .add_observer(on_action_button_click)
+        .add_observer(on_secondary_action_button_click)
         .add_observer(on_cancel_button_click)
         .add_observer(on_close_button_click)
         .add_observer(on_close_dialog)
@@ -48,6 +49,9 @@ struct DialogCancelButton;
 struct DialogActionButton;
 
 #[derive(Component)]
+struct DialogSecondaryActionButton;
+
+#[derive(Component)]
 pub struct DialogChildrenSlot;
 
 #[derive(Component, Default, Clone, Copy)]
@@ -77,6 +81,11 @@ pub struct DialogActionEvent {
     pub entity: Entity,
 }
 
+#[derive(EntityEvent)]
+pub struct DialogSecondaryActionEvent {
+    pub entity: Entity,
+}
+
 #[derive(Event)]
 pub struct CloseDialogEvent;
 
@@ -85,6 +94,7 @@ pub struct OpenDialogEvent {
     pub title: Option<String>,
     pub description: Option<String>,
     pub action: Option<String>,
+    pub secondary_action: Option<String>,
     pub cancel: Option<String>,
     pub variant: DialogVariant,
     pub has_close_button: bool,
@@ -100,6 +110,7 @@ impl OpenDialogEvent {
             title: Some(title.into()),
             description: None,
             action: Some(action.into()),
+            secondary_action: None,
             cancel: Some("Cancel".into()),
             variant: DialogVariant::Default,
             has_close_button: true,
@@ -112,6 +123,16 @@ impl OpenDialogEvent {
 
     pub fn without_cancel(mut self) -> Self {
         self.cancel = None;
+        self
+    }
+
+    pub fn with_secondary_action(mut self, label: impl Into<String>) -> Self {
+        self.secondary_action = Some(label.into());
+        self
+    }
+
+    pub fn with_description(mut self, description: impl Into<String>) -> Self {
+        self.description = Some(description.into());
         self
     }
 
@@ -226,7 +247,8 @@ fn spawn_dialog(
         .id();
 
     let has_header = event.title.is_some() || event.description.is_some();
-    let has_footer = event.action.is_some() || event.cancel.is_some();
+    let has_footer =
+        event.action.is_some() || event.cancel.is_some() || event.secondary_action.is_some();
 
     let header_id = if has_header {
         let mut header = commands.spawn((
@@ -291,7 +313,32 @@ fn spawn_dialog(
             ));
         }
 
-        Some(footer.id())
+        let footer_id = footer.id();
+
+        // Secondary action on the far left (margin-right: auto pushes it left).
+        // The button is wrapped in a layout node to avoid a duplicate `Node` component
+        // (since `button()` already provides one via `button_base()`).
+        if let Some(secondary) = &event.secondary_action {
+            let btn = commands
+                .spawn((
+                    DialogSecondaryActionButton,
+                    button(ButtonProps::new(secondary)),
+                ))
+                .id();
+            let wrapper = commands
+                .spawn(Node {
+                    margin: UiRect {
+                        right: Val::Auto,
+                        ..default()
+                    },
+                    ..default()
+                })
+                .id();
+            commands.entity(wrapper).add_child(btn);
+            commands.entity(footer_id).insert_child(0, wrapper);
+        }
+
+        Some(footer_id)
     } else {
         None
     };
@@ -455,6 +502,27 @@ fn on_action_button_click(
 
     if let Some(dialog_entity) = find_dialog_ancestor(button_parent.parent(), &parents, &dialogs) {
         commands.trigger(DialogActionEvent {
+            entity: dialog_entity,
+        });
+        dismiss_dialog(&mut commands, dialog_entity);
+    }
+}
+
+fn on_secondary_action_button_click(
+    event: On<ButtonClickEvent>,
+    secondary_buttons: Query<&ChildOf, With<DialogSecondaryActionButton>>,
+    parents: Query<&ChildOf>,
+    dialogs: Query<Entity, With<EditorDialog>>,
+    mut commands: Commands,
+) {
+    let Ok(button_parent) = secondary_buttons.get(event.entity) else {
+        return;
+    };
+
+    if let Some(dialog_entity) =
+        find_dialog_ancestor(button_parent.parent(), &parents, &dialogs)
+    {
+        commands.trigger(DialogSecondaryActionEvent {
             entity: dialog_entity,
         });
         dismiss_dialog(&mut commands, dialog_entity);

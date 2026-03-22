@@ -1,7 +1,6 @@
 use bevy::{
     asset::{AssetPlugin, UnapprovedPathMode},
     image::{ImageAddressMode, ImagePlugin, ImageSamplerDescriptor},
-    light::GlobalAmbientLight,
     prelude::*,
 };
 use jackdaw::EditorPlugin;
@@ -33,24 +32,7 @@ fn main() -> AppExit {
 }
 
 fn spawn_scene(mut commands: Commands) {
-    commands.insert_resource(GlobalAmbientLight {
-        color: Color::WHITE,
-        brightness: 400.0,
-        affects_lightmapped_meshes: true,
+    commands.queue(|world: &mut World| {
+        jackdaw::scene_io::spawn_default_lighting(world);
     });
-
-    commands.spawn((
-        Name::new("Sun"),
-        DirectionalLight {
-            shadows_enabled: true,
-            illuminance: 10000.0,
-            ..default()
-        },
-        Transform::from_xyz(10.0, 20.0, 10.0).with_rotation(Quat::from_euler(
-            EulerRot::XYZ,
-            -0.8,
-            0.4,
-            0.0,
-        )),
-    ));
 }

@@ -146,6 +146,7 @@ impl Plugin for EditorPlugin {
                 OnEnter(AppState::Editor),
                 (spawn_layout, populate_menu).chain(),
             )
+            .add_systems(OnExit(AppState::Editor), cleanup_editor)
             .add_systems(
                 Update,
                 (
@@ -233,6 +234,9 @@ fn populate_menu(world: &mut World) {
                     ("file.save_template", "Save Selection as Template"),
                     ("---", ""),
                     ("file.keybinds", "Keybinds..."),
+                    ("---", ""),
+                    ("file.open_recent", "Open Recent..."),
+                    ("file.home", "Home"),
                 ],
             ),
             (
@@ -413,6 +417,16 @@ fn handle_menu_action(event: On<MenuAction>, mut commands: Commands) {
         "file.keybinds" => {
             commands.trigger(keybind_settings::OpenKeybindSettingsEvent);
         }
+        "file.home" => {
+            commands.queue(|world: &mut World| {
+                world
+                    .resource_mut::<NextState<AppState>>()
+                    .set(AppState::ProjectSelect);
+            });
+        }
+        "file.open_recent" => {
+            commands.queue(open_recent_dialog);
+        }
         "view.wireframe" => {
             commands.queue(|world: &mut World| {
                 let mut settings = world.resource_mut::<view_modes::ViewModeSettings>();
@@ -521,6 +535,171 @@ fn handle_menu_action(event: On<MenuAction>, mut commands: Commands) {
         }
         _ => {}
     }
+}
+
+fn cleanup_editor(world: &mut World) {
+    // 1. Clear scene entities
+    scene_io::clear_scene_entities(world);
+
+    // 2. Despawn all EditorEntity entities
+    let editor_entities: Vec<Entity> = world
+        .query_filtered::<Entity, With<EditorEntity>>()
+        .iter(world)
+        .collect();
+    for entity in editor_entities {
+        if let Ok(ec) = world.get_entity_mut(entity) {
+            ec.despawn();
+        }
+    }
+
+    // 3. Despawn Camera2d entities (editor UI camera)
+    let cameras: Vec<Entity> = world
+        .query_filtered::<Entity, With<Camera2d>>()
+        .iter(world)
+        .collect();
+    for entity in cameras {
+        if let Ok(ec) = world.get_entity_mut(entity) {
+            ec.despawn();
+        }
+    }
+
+    // 4. Despawn any open dialogs
+    let dialogs: Vec<Entity> = world
+        .query_filtered::<Entity, With<jackdaw_feathers::dialog::EditorDialog>>()
+        .iter(world)
+        .collect();
+    for entity in dialogs {
+        if let Ok(ec) = world.get_entity_mut(entity) {
+            ec.despawn();
+        }
+    }
+
+    // 5. Reset resources
+    world.insert_resource(scene_io::SceneFilePath::default());
+    world.insert_resource(scene_io::SceneDirtyState::default());
+    world.insert_resource(Selection::default());
+    world.insert_resource(commands::CommandHistory::default());
+
+    // 6. Remove project root
+    world.remove_resource::<project::ProjectRoot>();
+
+    // 7. Reset menu bar state
+    let dropdown_to_despawn = {
+        let mut menu_state = world.resource_mut::<jackdaw_widgets::menu_bar::MenuBarState>();
+        menu_state.open_menu = None;
+        menu_state.dropdown_entity.take()
+    };
+    if let Some(dropdown) = dropdown_to_despawn {
+        if let Ok(ec) = world.get_entity_mut(dropdown) {
+            ec.despawn();
+        }
+    }
+}
+
+fn open_recent_dialog(world: &mut World) {
+    let recent = project::read_recent_projects();
+    if recent.projects.is_empty() {
+        return;
+    }
+
+    let mut dialog_event = jackdaw_feathers::dialog::OpenDialogEvent::new("Open Recent", "")
+        .without_cancel()
+        .with_close_button(true)
+        .without_content_padding();
+    dialog_event.action = None;
+    world.commands().trigger(dialog_event);
+    world.flush();
+
+    // Find the DialogChildrenSlot and spawn rows inside it
+    let slot_entity = world
+        .query_filtered::<Entity, With<jackdaw_feathers::dialog::DialogChildrenSlot>>()
+        .iter(world)
+        .next();
+
+    let Some(slot_entity) = slot_entity else {
+        return;
+    };
+
+    let editor_font = world.resource::<jackdaw_feathers::icons::EditorFont>().0.clone();
+
+    for entry in &recent.projects {
+        let path = entry.path.clone();
+        let name = entry.name.clone();
+        let path_display = entry.path.to_string_lossy().to_string();
+        let font = editor_font.clone();
+
+        let row = world
+            .commands()
+            .spawn((
+                Node {
+                    flex_direction: FlexDirection::Column,
+                    width: Val::Percent(100.0),
+                    padding: UiRect::all(Val::Px(10.0)),
+                    row_gap: Val::Px(2.0),
+                    ..Default::default()
+                },
+                BackgroundColor(jackdaw_feathers::tokens::TOOLBAR_BG),
+                children![
+                    (
+                        Text::new(name),
+                        TextFont {
+                            font: font.clone(),
+                            font_size: jackdaw_feathers::tokens::FONT_LG,
+                            ..Default::default()
+                        },
+                        TextColor(jackdaw_feathers::tokens::TEXT_PRIMARY),
+                        Pickable::IGNORE,
+                    ),
+                    (
+                        Text::new(path_display),
+                        TextFont {
+                            font,
+                            font_size: jackdaw_feathers::tokens::FONT_SM,
+                            ..Default::default()
+                        },
+                        TextColor(jackdaw_feathers::tokens::TEXT_SECONDARY),
+                        Pickable::IGNORE,
+                    ),
+                ],
+            ))
+            .id();
+
+        // Hover effects
+        world.commands().entity(row).observe(
+            |hover: On<Pointer<Over>>, mut bg: Query<&mut BackgroundColor>| {
+                if let Ok(mut bg) = bg.get_mut(hover.event_target()) {
+                    bg.0 = jackdaw_feathers::tokens::HOVER_BG;
+                }
+            },
+        );
+        world.commands().entity(row).observe(
+            |out: On<Pointer<Out>>, mut bg: Query<&mut BackgroundColor>| {
+                if let Ok(mut bg) = bg.get_mut(out.event_target()) {
+                    bg.0 = jackdaw_feathers::tokens::TOOLBAR_BG;
+                }
+            },
+        );
+
+        // Click: open the project
+        world.commands().entity(row).observe(
+            move |_: On<Pointer<Click>>, mut commands: Commands| {
+                let path = path.clone();
+                commands.insert_resource(project_select::PendingAutoOpen {
+                    path: path.clone(),
+                });
+                commands.trigger(jackdaw_feathers::dialog::CloseDialogEvent);
+                commands.queue(move |world: &mut World| {
+                    world
+                        .resource_mut::<NextState<AppState>>()
+                        .set(AppState::ProjectSelect);
+                });
+            },
+        );
+
+        world.commands().entity(slot_entity).add_child(row);
+    }
+
+    world.flush();
 }
 
 const SCROLL_LINE_HEIGHT: f32 = 21.0;
